@@ -1,0 +1,22 @@
+[package]
+name = "vulkanite_vulkan"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vulkanite_types = { path = "../vulkanite_types", version = "0.1" }
+ash = { version = "0.37", default-features = false, features = ["linked", "debug"] }
+ash-window = "0.11.0"
+gpu-allocator = "0.18.0"
+raw-window-handle = "0.4.2"
+naga = {version = "0.9.0", features = ["glsl-in", "wgsl-in", "spv-in", "spv-out"]}
+thiserror = "1.0.32"
+tracing = "0.1.34"
+
+bitflags = "1.3.2"
+bytemuck = { version = "1.9.1", features = ["derive"] }
+parking_lot = "0.12.0"
+crossbeam = "0.8.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+ash-molten = "0.13"

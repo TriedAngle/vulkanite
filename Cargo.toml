@@ -1,0 +1,14 @@
+[package]
+name = "vulkanite"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+members = [
+    "crates/vulkanite_vulkan",
+    "crates/vulkanite_web",
+    "crates/vulkanite_types",
+    "examples/vulkan"
+]
+
+[dependencies]
