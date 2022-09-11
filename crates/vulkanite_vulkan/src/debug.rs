@@ -1,10 +1,7 @@
-use tracing::Level;
-use ash::{
-    extensions::ext,
-    vk,
-};
+use ash::{extensions::ext, vk};
 use std::borrow::Cow;
 use std::{ffi, os::raw};
+use tracing::Level;
 
 pub(crate) struct VkDebug {
     pub(crate) loader: ext::DebugUtils,

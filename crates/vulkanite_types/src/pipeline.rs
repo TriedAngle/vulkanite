@@ -1,5 +1,3 @@
-use crate::TextureFormat;
-
 bitflags::bitflags! {
     /// Color write mask. Disabled color channels will not be written to.
     ///
@@ -145,14 +143,6 @@ impl BlendState {
         color: BlendComponent::OVER,
         alpha: BlendComponent::OVER,
     };
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ColorTargetState {
-    pub format: TextureFormat,
-    pub blend: Option<BlendState>,
-    pub write_mask: ColorWrites
 }
 
 #[repr(C)]

@@ -3,13 +3,13 @@ use crate::instance::{Instance, InstanceShared};
 use crate::types::{PresentMode, Texture, TextureFormat, TextureUsages};
 use tracing::{info, warn};
 
-use ash::{extensions::khr, vk};
-use std::sync::Arc;
-use std::{error, fmt};
-use raw_window_handle::HasRawWindowHandle;
 use crate::adapter::Adapter;
 use crate::queue::Queue;
 use crate::sync::{BinarySemaphore, Fence};
+use ash::{extensions::khr, vk};
+use raw_window_handle::HasRawWindowHandle;
+use std::sync::Arc;
+use std::{error, fmt};
 
 #[derive(Clone)]
 pub struct Surface {
@@ -319,7 +319,10 @@ impl Device {
 }
 
 impl Instance {
-    pub fn create_surface(&self, window_handle: &dyn HasRawWindowHandle) -> Result<Surface, SurfaceError> {
+    pub fn create_surface(
+        &self,
+        window_handle: &dyn HasRawWindowHandle,
+    ) -> Result<Surface, SurfaceError> {
         let instance = self.shared.clone();
         let handle = unsafe {
             ash_window::create_surface(&instance.entry, &instance.handle, window_handle, None)

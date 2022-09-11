@@ -1,6 +1,6 @@
+use crate::instance::Instance;
 use crate::instance::InstanceShared;
 use crate::queue::QueueFamily;
-use crate::instance::Instance;
 use ash::vk;
 use std::fmt;
 use std::sync::Arc;

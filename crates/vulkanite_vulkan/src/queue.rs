@@ -1,10 +1,10 @@
+use crate::command::CommandBuffer;
 use crate::device::{DeviceError, DeviceShared};
-use crate::sync::{Fence, BinarySemaphore};
+use crate::sync::{BinarySemaphore, Fence};
 use ash::vk;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use tracing::info;
-use crate::command::CommandBuffer;
 
 #[derive(Debug)]
 pub struct Queue {

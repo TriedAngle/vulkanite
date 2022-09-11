@@ -1,10 +1,12 @@
 use crate::device::{Device, DeviceError, DeviceShared};
+use crate::pipeline::RasterPipeline;
+use crate::queue::Queue;
 use crate::surface::Frame;
+use crate::types::{ImageTransitionLayout, RenderInfo};
 use ash::vk;
 use parking_lot::Mutex;
+use std::ops::Range;
 use std::sync::Arc;
-use crate::queue::Queue;
-use crate::types::{ImageTransitionLayout, RenderInfo};
 
 const BUFFER_COUNT: u32 = 8;
 
@@ -91,6 +93,182 @@ impl CommandEncoder {
             handle.end_rendering();
         }
     }
+
+    pub fn set_raster_pipeline(&mut self, pipeline: &RasterPipeline) {
+        let mut handle = self.handle.lock();
+        if handle.active == vk::CommandBuffer::null() {
+            panic!("no active encoding");
+        }
+        unsafe {
+            handle.set_raster_pipeline(pipeline);
+        }
+    }
+
+    pub fn draw(&mut self, vertex: Range<u32>, instance: Range<u32>) {
+        let mut handle = self.handle.lock();
+        if handle.active == vk::CommandBuffer::null() {
+            panic!("no active encoding");
+        }
+        let vertex_count = vertex.len() as u32;
+        let instance_count = instance.len() as u32;
+        unsafe {
+            handle.draw(vertex.start, vertex_count, instance.start, instance_count);
+        }
+    }
+}
+
+impl VkCommandEncoder {
+    pub(crate) unsafe fn image_transition(
+        &mut self,
+        old: vk::ImageLayout,
+        new: vk::ImageLayout,
+        image: vk::Image,
+    ) {
+        let barrier = vk::ImageMemoryBarrier::builder()
+            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .old_layout(old)
+            .new_layout(new)
+            .image(image)
+            .subresource_range(
+                vk::ImageSubresourceRange::builder()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .base_mip_level(0)
+                    .level_count(1)
+                    .base_array_layer(0)
+                    .layer_count(1)
+                    .build(),
+            )
+            .build();
+
+        let barriers = [barrier];
+        self.device.handle.cmd_pipeline_barrier(
+            self.active,
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            vk::DependencyFlags::empty(),
+            &[],
+            &[],
+            &barriers,
+        );
+    }
+
+    pub(crate) unsafe fn begin_rendering(
+        &mut self,
+        area: vk::Rect2D,
+        attachments: &[vk::RenderingAttachmentInfo],
+    ) {
+        let render_info = vk::RenderingInfo::builder()
+            .render_area(area)
+            .color_attachments(attachments)
+            .view_mask(0)
+            .layer_count(1);
+
+        let viewports = [vk::Viewport::builder()
+            .width(area.extent.width as f32)
+            .height(area.extent.height as f32)
+            .x(area.offset.x as f32)
+            .y(area.offset.y as f32)
+            .min_depth(0.0)
+            .max_depth(1.0)
+            .build()];
+
+        self.device.handle.cmd_set_scissor(self.active, 0, &[area]);
+        self.device
+            .handle
+            .cmd_set_viewport(self.active, 0, &viewports);
+
+        self.device
+            .handle
+            .cmd_begin_rendering(self.active, &render_info);
+    }
+
+    pub(crate) unsafe fn end_rendering(&mut self) {
+        self.device.handle.cmd_end_rendering(self.active);
+    }
+
+    pub(crate) unsafe fn begin_encoding(&mut self) -> Result<(), DeviceError> {
+        if self.primary.is_empty() {
+            self.allocate(BUFFER_COUNT, false)?
+        }
+
+        let active = self.primary.pop().unwrap();
+
+        let command_begin_info = vk::CommandBufferBeginInfo::builder()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+
+        self.device
+            .handle
+            .begin_command_buffer(active, &command_begin_info)
+            .map_err(DeviceError::Other)?;
+
+        self.active = active;
+
+        Ok(())
+    }
+
+    pub(crate) unsafe fn end_encoding(&mut self) -> Result<CommandBuffer, DeviceError> {
+        let active = self.active;
+        self.active = vk::CommandBuffer::null();
+
+        self.device
+            .handle
+            .end_command_buffer(active)
+            .map_err(DeviceError::Other)?;
+
+        Ok(CommandBuffer { handle: active })
+    }
+
+    pub(crate) unsafe fn set_raster_pipeline(&mut self, pipeline: &RasterPipeline) {
+        self.device.handle.cmd_bind_pipeline(
+            self.active,
+            vk::PipelineBindPoint::GRAPHICS,
+            pipeline.handle,
+        )
+    }
+
+    pub(crate) unsafe fn draw(
+        &mut self,
+        start_vertex: u32,
+        count_vertex: u32,
+        start_instance: u32,
+        count_instance: u32,
+    ) {
+        self.device.handle.cmd_draw(
+            self.active,
+            start_vertex,
+            count_vertex,
+            start_instance,
+            count_instance,
+        )
+    }
+
+    unsafe fn allocate(&mut self, count: u32, secondary: bool) -> Result<(), DeviceError> {
+        let buffer_info = {
+            let handle = self.handle.lock();
+            vk::CommandBufferAllocateInfo::builder()
+                .command_pool(*handle)
+                .command_buffer_count(count)
+                .level(if secondary {
+                    vk::CommandBufferLevel::SECONDARY
+                } else {
+                    vk::CommandBufferLevel::PRIMARY
+                })
+        };
+
+        let buffers = self
+            .device
+            .handle
+            .allocate_command_buffers(&buffer_info)
+            .map_err(DeviceError::Other)?;
+
+        if secondary {
+            self.primary.extend(buffers);
+        } else {
+            self.primary.extend(buffers);
+        }
+
+        Ok(())
+    }
 }
 
 impl Device {
@@ -138,121 +316,6 @@ impl Device {
             handle: Arc::new(Mutex::new(vk_command_encoder)),
             device,
         })
-    }
-}
-
-impl VkCommandEncoder {
-    pub(crate) unsafe fn image_transition(
-        &mut self,
-        old: vk::ImageLayout,
-        new: vk::ImageLayout,
-        image: vk::Image,
-    ) {
-        let barrier = vk::ImageMemoryBarrier::builder()
-            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-            .old_layout(old)
-            .new_layout(new)
-            .image(image)
-            .subresource_range(
-                vk::ImageSubresourceRange::builder()
-                    .aspect_mask(vk::ImageAspectFlags::COLOR)
-                    .base_mip_level(0)
-                    .level_count(1)
-                    .base_array_layer(0)
-                    .layer_count(1)
-                    .build(),
-            )
-            .build();
-
-        let barriers = [barrier];
-        self.device.handle.cmd_pipeline_barrier(
-            self.active,
-            vk::PipelineStageFlags::TOP_OF_PIPE,
-            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            vk::DependencyFlags::empty(),
-            &[],
-            &[],
-            &barriers,
-        );
-    }
-
-    pub(crate) unsafe fn begin_rendering(
-        &mut self,
-        area: vk::Rect2D,
-        attachments: &[vk::RenderingAttachmentInfo],
-    ) {
-        let render_info = vk::RenderingInfo::builder()
-            .render_area(area)
-            .color_attachments(attachments)
-            .layer_count(1);
-
-        self.device
-            .handle
-            .cmd_begin_rendering(self.active, &render_info);
-    }
-
-    pub(crate) unsafe fn end_rendering(&mut self) {
-        self.device.handle.cmd_end_rendering(self.active);
-    }
-
-    pub(crate) unsafe fn begin_encoding(&mut self) -> Result<(), DeviceError> {
-        if self.primary.is_empty() {
-            self.allocate(BUFFER_COUNT, false)?
-        }
-
-        let active = self.primary.pop().unwrap();
-
-        let command_begin_info = vk::CommandBufferBeginInfo::builder()
-            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-
-        self.device
-            .handle
-            .begin_command_buffer(active, &command_begin_info)
-            .map_err(DeviceError::Other)?;
-
-        self.active = active;
-
-        Ok(())
-    }
-
-    pub(crate) unsafe fn end_encoding(&mut self) -> Result<CommandBuffer, DeviceError> {
-        let active = self.active;
-        self.active = vk::CommandBuffer::null();
-
-        self.device
-            .handle
-            .end_command_buffer(active)
-            .map_err(DeviceError::Other)?;
-
-        Ok(CommandBuffer { handle: active })
-    }
-
-    unsafe fn allocate(&mut self, count: u32, secondary: bool) -> Result<(), DeviceError> {
-        let buffer_info = {
-            let handle = self.handle.lock();
-            vk::CommandBufferAllocateInfo::builder()
-                .command_pool(*handle)
-                .command_buffer_count(count)
-                .level(if secondary {
-                    vk::CommandBufferLevel::SECONDARY
-                } else {
-                    vk::CommandBufferLevel::PRIMARY
-                })
-        };
-
-        let buffers = self
-            .device
-            .handle
-            .allocate_command_buffers(&buffer_info)
-            .map_err(DeviceError::Other)?;
-
-        if secondary {
-            self.primary.extend(buffers);
-        } else {
-            self.primary.extend(buffers);
-        }
-
-        Ok(())
     }
 }
 

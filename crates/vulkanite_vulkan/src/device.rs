@@ -1,19 +1,19 @@
+use crate::adapter::Adapter;
 use crate::command::CommandEncoder;
 use crate::instance::InstanceShared;
+use crate::queue::Queue;
 use crate::queue::QueueCreateInfo;
 use crate::types::{Extensions, Features};
-use crate::adapter::Adapter;
-use crate::queue::Queue;
 use tracing::info;
 
 use ash::vk;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use parking_lot::Mutex;
+use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::os::raw;
 use std::sync::Arc;
 use std::{error, ffi};
-use std::collections::HashMap;
 
 pub(crate) struct DeviceShared {
     pub(crate) handle: ash::Device,

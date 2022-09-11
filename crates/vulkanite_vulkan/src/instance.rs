@@ -1,12 +1,12 @@
 use crate::debug::{VkDebug, VkDebugCallback};
 use crate::types::{Extensions, Layers};
 use crate::utils::Version;
-use tracing::info;
 use ash::vk;
 use std::fmt::{Debug, Display, Formatter};
 use std::os::raw;
 use std::sync::Arc;
 use std::{error, ffi, ptr};
+use tracing::info;
 
 pub(crate) struct InstanceShared {
     pub(crate) entry: ash::Entry,
@@ -23,7 +23,8 @@ pub struct Instance {
 
 impl Instance {
     pub fn new(info: InstanceCreateInfo) -> Result<Self, InstanceCreationError> {
-        let instance = InstanceShared::init(info).map_err(|err| InstanceCreationError::Other(err))?;
+        let instance =
+            InstanceShared::init(info).map_err(|err| InstanceCreationError::Other(err))?;
 
         Ok(Self {
             shared: Arc::new(instance),

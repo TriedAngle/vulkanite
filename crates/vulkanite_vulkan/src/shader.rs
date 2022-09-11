@@ -1,13 +1,13 @@
+use crate::device::{Device, DeviceError, DeviceShared};
+use ash::vk;
+use naga::back::spv;
+use naga::back::spv::WriterFlags;
+use naga::front::glsl;
+use naga::front::wgsl;
+use naga::valid::{Capabilities, ValidationFlags, Validator};
+use naga::{back, Module};
 use std::borrow::Cow;
 use std::sync::Arc;
-use ash::vk;
-use naga::front::wgsl;
-use naga::front::glsl;
-use naga::back::spv;
-use naga::{back, Module};
-use naga::back::spv::WriterFlags;
-use naga::valid::{Capabilities, ValidationFlags, Validator};
-use crate::device::{Device, DeviceError, DeviceShared};
 use thiserror::Error;
 
 #[derive(Debug, Default, Copy, Clone)]
@@ -18,7 +18,7 @@ pub struct ShaderCompileInfo {
 
 pub enum ShaderSource<'a> {
     Wgsl(Cow<'a, str>),
-    SpirV(Cow<'a, str>)
+    SpirV(Cow<'a, str>),
 }
 
 pub struct ShaderModule {
@@ -41,7 +41,11 @@ pub enum ShaderError {
 }
 
 impl Device {
-    pub fn create_shader_module(&self, source: ShaderSource<'_>, info: ShaderCompileInfo) -> Result<ShaderModule, ShaderError> {
+    pub fn create_shader_module(
+        &self,
+        source: ShaderSource<'_>,
+        info: ShaderCompileInfo,
+    ) -> Result<ShaderModule, ShaderError> {
         let module = match source {
             ShaderSource::Wgsl(source) => {
                 wgsl::parse_str(&source).map_err(|e| ShaderError::WgslParse(e))
@@ -64,17 +68,23 @@ impl Device {
             .validate(&module)
             .map_err(|e| ShaderError::Validation(e))?;
 
-        let spv = spv::write_vec(&module, &info, &opts, None).map_err(|e| ShaderError::SpirVParse(e))?;
+        let spv =
+            spv::write_vec(&module, &info, &opts, None).map_err(|e| ShaderError::SpirVParse(e))?;
         let vk_info = vk::ShaderModuleCreateInfo::builder()
             .flags(vk::ShaderModuleCreateFlags::empty())
             .code(&spv);
 
         let handle = unsafe {
-            self.shared.handle.create_shader_module(&vk_info, None)
+            self.shared
+                .handle
+                .create_shader_module(&vk_info, None)
                 .map_err(DeviceError::Other)
                 .map_err(ShaderError::Device)?
         };
 
-        Ok(ShaderModule { handle, device: self.shared.clone() })
+        Ok(ShaderModule {
+            handle,
+            device: self.shared.clone(),
+        })
     }
 }

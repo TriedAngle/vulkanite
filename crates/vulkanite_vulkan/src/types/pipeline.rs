@@ -59,9 +59,9 @@
 //     binding_arrays: BindingMap,
 // }
 
-use ash::vk;
 use crate::color::Color;
 use crate::surface::Frame;
+use ash::vk;
 
 #[derive(Copy, Clone)]
 pub struct RenderInfo<'a> {

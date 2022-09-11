@@ -1,6 +1,6 @@
+use crate::pipeline::{CullModeFlags, FrontFace, PolygonMode, PrimitiveTopology, ShaderStages};
 use ash::vk;
 use vulkanite_types::pipeline::{BlendComponent, BlendFactor, BlendOperation, VertexFormat};
-use crate::pipeline::{CullModeFlags, FrontFace, PolygonMode, PrimitiveTopology, ShaderStages};
 
 pub fn map_shader_stage(stage: ShaderStages) -> vk::ShaderStageFlags {
     let mut flags = vk::ShaderStageFlags::empty();
@@ -25,9 +25,15 @@ pub fn map_topology(topology: PrimitiveTopology) -> vk::PrimitiveTopology {
         PrimitiveTopology::TriangleStrip => vk::PrimitiveTopology::TRIANGLE_STRIP,
         PrimitiveTopology::TriangleFan => vk::PrimitiveTopology::TRIANGLE_FAN,
         PrimitiveTopology::LineListWithAdjacency => vk::PrimitiveTopology::LINE_LIST_WITH_ADJACENCY,
-        PrimitiveTopology::LineStripWithAdjacency => vk::PrimitiveTopology::LINE_STRIP_WITH_ADJACENCY,
-        PrimitiveTopology::TriangleListWithAdjacency => vk::PrimitiveTopology::TRIANGLE_LIST_WITH_ADJACENCY,
-        PrimitiveTopology::TriangleStripWithAdjacency => vk::PrimitiveTopology::TRIANGLE_STRIP_WITH_ADJACENCY,
+        PrimitiveTopology::LineStripWithAdjacency => {
+            vk::PrimitiveTopology::LINE_STRIP_WITH_ADJACENCY
+        }
+        PrimitiveTopology::TriangleListWithAdjacency => {
+            vk::PrimitiveTopology::TRIANGLE_LIST_WITH_ADJACENCY
+        }
+        PrimitiveTopology::TriangleStripWithAdjacency => {
+            vk::PrimitiveTopology::TRIANGLE_STRIP_WITH_ADJACENCY
+        }
         PrimitiveTopology::PatchList => vk::PrimitiveTopology::PATCH_LIST,
     }
 }
@@ -54,7 +60,7 @@ pub fn map_cull_face(face: CullModeFlags) -> vk::CullModeFlags {
         CullModeFlags::FRONT => vk::CullModeFlags::FRONT,
         CullModeFlags::BACK => vk::CullModeFlags::BACK,
         CullModeFlags::FRONT_BACK => vk::CullModeFlags::FRONT_AND_BACK,
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }
 

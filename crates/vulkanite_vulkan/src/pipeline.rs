@@ -1,15 +1,15 @@
+use crate::conv;
+use crate::device::{Device, DeviceError, DeviceShared};
+use crate::shader::ShaderModule;
+use crate::types::TextureFormat;
+use ash::vk;
+use ash::vk::PipelineVertexInputStateCreateFlags;
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use std::ops::Range;
-use std::{ffi, ptr};
 use std::sync::Arc;
-use ash::vk;
-use ash::vk::PipelineVertexInputStateCreateFlags;
-use vulkanite_types::pipeline::{ColorTargetState, VertexFormat};
-use crate::shader::ShaderModule;
-use crate::conv;
-use crate::device::{Device, DeviceError, DeviceShared};
-use crate::types::TextureFormat;
+use std::{ffi, ptr};
+pub use vulkanite_types::pipeline::{BlendState, ColorWrites, VertexFormat};
 
 bitflags::bitflags! {
     #[repr(transparent)]
@@ -71,7 +71,7 @@ pub enum PrimitiveTopology {
     LineStripWithAdjacency = 7,
     TriangleListWithAdjacency = 8,
     TriangleStripWithAdjacency = 9,
-    PatchList = 10
+    PatchList = 10,
 }
 
 #[repr(C)]
@@ -102,7 +102,7 @@ pub enum DepthCompareOperator {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub enum  VertexStepMode {
+pub enum VertexStepMode {
     Vertex = 0,
     Instance = 1,
 }
@@ -141,7 +141,7 @@ pub struct BindGroupLayoutEntry {
     binding: u32,
     visibility: ShaderStages,
     ty: BindingType,
-    count: Option<NonZeroU32>
+    count: Option<NonZeroU32>,
 }
 
 pub enum BindingType {}
@@ -179,13 +179,21 @@ pub struct MultisampleState {
     pub alpha_to_coverage_enabled: bool,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ColorTargetState {
+    pub format: TextureFormat,
+    pub blend: Option<BlendState>,
+    pub write_mask: ColorWrites,
+}
+
 pub type BufferAddress = u64;
 pub type ShaderLocation = u32;
 
 pub struct VertexAttribute {
     pub format: VertexFormat,
     pub offset: BufferAddress,
-    pub shader_location: ShaderLocation
+    pub shader_location: ShaderLocation,
 }
 
 pub struct VertexBufferLayout<'a> {
@@ -202,21 +210,19 @@ pub struct RasterPipelineInfo<'a> {
     pub primitive: PrimitiveState,
     // pub depth_stencil:
     pub multisample: MultisampleState,
-    pub targets: &'a [ColorTargetState]
+    pub targets: &'a [ColorTargetState],
 }
 
-pub struct ComputePipelineInfo {
-
-}
+pub struct ComputePipelineInfo {}
 
 pub struct RasterPipeline {
     pub(crate) device: Arc<DeviceShared>,
-    pub(crate) handle: vk::Pipeline
+    pub(crate) handle: vk::Pipeline,
 }
 
 pub struct ComputePipeline {
     pub(crate) device: Arc<DeviceShared>,
-    pub(crate) handle: vk::Pipeline
+    pub(crate) handle: vk::Pipeline,
 }
 
 impl Device {
@@ -224,13 +230,18 @@ impl Device {
     //
     // }
 
-    pub fn create_pipeline_layout(&self, info: &PipelineLayoutInfo) -> Result<PipelineLayout, DeviceError> {
-        let vk_set_layouts = info.bind_group_layouts
+    pub fn create_pipeline_layout(
+        &self,
+        info: &PipelineLayoutInfo,
+    ) -> Result<PipelineLayout, DeviceError> {
+        let vk_set_layouts = info
+            .bind_group_layouts
             .iter()
             .map(|bgl| bgl.handle)
             .collect::<Vec<_>>();
 
-        let vk_push_constant_ranges = info.push_constant_ranges
+        let vk_push_constant_ranges = info
+            .push_constant_ranges
             .iter()
             .map(|pcr| vk::PushConstantRange {
                 stage_flags: conv::map_shader_stage(pcr.stages),
@@ -244,7 +255,12 @@ impl Device {
             .set_layouts(&vk_set_layouts)
             .push_constant_ranges(&vk_push_constant_ranges);
 
-        let handle = unsafe { self.shared.handle.create_pipeline_layout(&layout_info, None).map_err(DeviceError::Other)? };
+        let handle = unsafe {
+            self.shared
+                .handle
+                .create_pipeline_layout(&layout_info, None)
+                .map_err(DeviceError::Other)?
+        };
 
         let mut binding_arrays = BTreeMap::new();
         // for (group, &layout) in info.bind_group_layouts.iter().enumerate() {
@@ -257,7 +273,10 @@ impl Device {
         })
     }
 
-    pub fn create_raster_pipeline(&self, info: &RasterPipelineInfo<'_>) -> Result<RasterPipeline, DeviceError> {
+    pub fn create_raster_pipeline(
+        &self,
+        info: &RasterPipelineInfo<'_>,
+    ) -> Result<RasterPipeline, DeviceError> {
         let dynamic_states = [
             vk::DynamicState::VIEWPORT,
             vk::DynamicState::SCISSOR,
@@ -273,7 +292,7 @@ impl Device {
                 .name(&vertex_name)
                 .stage(vk::ShaderStageFlags::VERTEX)
                 .module(info.vertex.module.handle)
-                .build()
+                .build(),
         );
         if let Some(fragment) = &info.fragment {
             fragment_name = ffi::CString::new(fragment.entry_point).unwrap();
@@ -282,7 +301,7 @@ impl Device {
                     .name(&fragment_name)
                     .stage(vk::ShaderStageFlags::FRAGMENT)
                     .module(fragment.module.handle)
-                    .build()
+                    .build(),
             );
         }
 
@@ -314,20 +333,18 @@ impl Device {
                     .vertex_attribute_descriptions(&vertex_attributes)
                     .build()
             }
-            None => {
-                vk::PipelineVertexInputStateCreateInfo {
-                    s_type: vk::StructureType::PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-                    p_next: ptr::null(),
-                    flags: PipelineVertexInputStateCreateFlags::empty(),
-                    vertex_binding_description_count: 0,
-                    p_vertex_binding_descriptions: ptr::null(),
-                    vertex_attribute_description_count: 0,
-                    p_vertex_attribute_descriptions: ptr::null()
-                }
-            }
+            None => vk::PipelineVertexInputStateCreateInfo {
+                s_type: vk::StructureType::PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+                p_next: ptr::null(),
+                flags: PipelineVertexInputStateCreateFlags::empty(),
+                vertex_binding_description_count: 0,
+                p_vertex_binding_descriptions: ptr::null(),
+                vertex_attribute_description_count: 0,
+                p_vertex_attribute_descriptions: ptr::null(),
+            },
         };
 
-        let vk_input_assembly= vk::PipelineInputAssemblyStateCreateInfo::builder()
+        let vk_input_assembly = vk::PipelineInputAssemblyStateCreateInfo::builder()
             .topology(conv::map_topology(info.primitive.topology))
             .primitive_restart_enable(info.primitive.strip_index_format.is_some());
 
@@ -340,29 +357,30 @@ impl Device {
             vk_rasterization = vk_rasterization.cull_mode(conv::map_cull_face(face_flags));
         }
 
-        let mut vk_rasterization_conservative_state = vk::PipelineRasterizationConservativeStateCreateInfoEXT::builder()
-            .conservative_rasterization_mode(vk::ConservativeRasterizationModeEXT::OVERESTIMATE)
-            .build();
+        let mut vk_rasterization_conservative_state =
+            vk::PipelineRasterizationConservativeStateCreateInfoEXT::builder()
+                .conservative_rasterization_mode(vk::ConservativeRasterizationModeEXT::OVERESTIMATE)
+                .build();
 
         if info.primitive.conservative {
             vk_rasterization = vk_rasterization.push_next(&mut vk_rasterization_conservative_state);
         }
 
-        let mut vk_depth_clip_state = vk::PipelineRasterizationDepthClipStateCreateInfoEXT::builder()
-            .depth_clip_enable(false)
-            .build();
+        let mut vk_depth_clip_state =
+            vk::PipelineRasterizationDepthClipStateCreateInfoEXT::builder()
+                .depth_clip_enable(false)
+                .build();
 
         if info.primitive.unclipped_depth {
             vk_rasterization = vk_rasterization.push_next(&mut vk_depth_clip_state);
         }
 
-        let mut vk_depth_stencil = vk::PipelineDepthStencilStateCreateInfo::builder()
-            ;
+        let mut vk_depth_stencil = vk::PipelineDepthStencilStateCreateInfo::builder();
 
         let vk_viewport = vk::PipelineViewportStateCreateInfo::builder()
             .flags(vk::PipelineViewportStateCreateFlags::empty())
             .scissor_count(1)
-            .viewport_count(1);;
+            .viewport_count(1);
 
         let vk_sample_mask = [
             info.multisample.mask as u32,
@@ -394,11 +412,11 @@ impl Device {
             vk_attachments.push(vk_attachment.build())
         }
 
-        let vk_color_blend = vk::PipelineColorBlendStateCreateInfo::builder()
-            .attachments(&vk_attachments);
+        let vk_color_blend =
+            vk::PipelineColorBlendStateCreateInfo::builder().attachments(&vk_attachments);
 
-        let vk_dynamic_state = vk::PipelineDynamicStateCreateInfo::builder()
-            .dynamic_states(&dynamic_states);
+        let vk_dynamic_state =
+            vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states);
 
         let vk_infos = [vk::GraphicsPipelineCreateInfo::builder()
             .layout(info.layout.handle)
@@ -414,12 +432,17 @@ impl Device {
             .build()];
 
         let mut pipeline_handles = unsafe {
-            self.shared.handle.create_graphics_pipelines(vk::PipelineCache::null(), &vk_infos, None)
-                .map_err(|(p, e)|DeviceError::Other(e))?
+            self.shared
+                .handle
+                .create_graphics_pipelines(vk::PipelineCache::null(), &vk_infos, None)
+                .map_err(|(p, e)| DeviceError::Other(e))?
         };
 
         let handle = pipeline_handles.pop().unwrap();
 
-        Ok(RasterPipeline { device: self.shared.clone(), handle })
+        Ok(RasterPipeline {
+            device: self.shared.clone(),
+            handle,
+        })
     }
 }

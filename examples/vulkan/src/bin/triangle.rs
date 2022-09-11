@@ -1,5 +1,5 @@
-use vulkanite_vulkan::vn;
 use vn::*;
+use vulkanite_vulkan::vn;
 
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, Event, VirtualKeyCode, WindowEvent};
@@ -31,7 +31,7 @@ fn main() {
         render: true,
         ..InstanceCreateInfo::default()
     })
-        .unwrap();
+    .unwrap();
 
     let adapter = instance.adapters().next().unwrap();
     let mut surface = instance.create_surface(&window).unwrap();
@@ -76,41 +76,54 @@ fn main() {
     let render_semaphore = device.create_binary_semaphore();
     let render_fence = device.create_fence();
 
-    let shader = device.create_shader_module(ShaderSource::Wgsl(include_str!("../shader/triangle.wgsl").into()), ShaderCompileInfo::default()).unwrap();
+    let shader = device
+        .create_shader_module(
+            ShaderSource::Wgsl(include_str!("../shader/triangle.wgsl").into()),
+            ShaderCompileInfo::default(),
+        )
+        .unwrap();
 
-    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutInfo {
-        flags: PipelineLayoutFlags::empty(),
-        bind_group_layouts: &[],
-        push_constant_ranges: &[]
-    }).unwrap();
+    let pipeline_layout = device
+        .create_pipeline_layout(&PipelineLayoutInfo {
+            flags: PipelineLayoutFlags::empty(),
+            bind_group_layouts: &[],
+            push_constant_ranges: &[],
+        })
+        .unwrap();
 
-    let pipeline = device.create_raster_pipeline(&RasterPipelineInfo {
-        layout: &pipeline_layout,
-        vertex: ShaderStage {
-            module: &shader,
-            entry_point: "vs_main"
-        },
-        vertex_buffers: None,
-        fragment: Some(ShaderStage {
-            module: &shader,
-            entry_point: "fs_main"
-        }),
-        primitive: PrimitiveState {
-            topology: PrimitiveTopology::TriangleList,
-            strip_index_format: None,
-            front_face: FrontFace::CounterClock,
-            cull_mode: Some(CullModeFlags::BACK),
-            polygon_mode: PolygonMode::Fill,
-            unclipped_depth: false,
-            conservative: false
-        },
-        multisample: MultisampleState {
-            count: 1,
-            mask: !0,
-            alpha_to_coverage_enabled: false
-        },
-        targets: &[]
-    }).unwrap();
+    let pipeline = device
+        .create_raster_pipeline(&RasterPipelineInfo {
+            layout: &pipeline_layout,
+            vertex: ShaderStage {
+                module: &shader,
+                entry_point: "vs_main",
+            },
+            vertex_buffers: None,
+            fragment: Some(ShaderStage {
+                module: &shader,
+                entry_point: "fs_main",
+            }),
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: FrontFace::Clock,
+                cull_mode: Some(CullModeFlags::BACK),
+                polygon_mode: PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            multisample: MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            targets: &[ColorTargetState {
+                format,
+                blend: Some(BlendState::REPLACE),
+                write_mask: ColorWrites::ALL,
+            }],
+        })
+        .unwrap();
     event_loop.run(move |event, event_loop, control_flow| match event {
         Event::WindowEvent { event, window_id } => match event {
             WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
@@ -150,6 +163,9 @@ fn main() {
                 offset: (0, 0),
                 area: (window.inner_size().width, window.inner_size().height),
             });
+
+            encoder.set_raster_pipeline(&pipeline);
+            encoder.draw(0..3, 0..1);
 
             encoder.end_rendering();
 
