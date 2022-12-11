@@ -58,16 +58,18 @@ fn main() {
     let format = surface.formats(&adapter).unwrap().next().unwrap();
     let mut queue = queues.next().unwrap();
 
+    let mut surface_config = vn::SurfaceConfig {
+        usage: vn::TextureUsages::COLOR_ATTACHMENT,
+        format,
+        width: window.inner_size().width,
+        height: window.inner_size().height,
+        mode: vn::PresentMode::Mailbox,
+    };
+
     surface
         .configure(
             &device,
-            &vn::SurfaceConfig {
-                usage: vn::TextureUsages::COLOR_ATTACHMENT,
-                format,
-                width: window.inner_size().width,
-                height: window.inner_size().height,
-                mode: vn::PresentMode::Mailbox,
-            },
+            &surface_config
         )
         .unwrap();
 
@@ -75,15 +77,16 @@ fn main() {
     let render_semaphore = device.create_binary_semaphore();
     let render_fence = device.create_fence();
 
-    // let shader = device
-    //     .create_shader_module(
-    //         ShaderSource::Wgsl(include_str!("../shader/triangle.wgsl").into()),
-    //         ShaderCompileInfo::default(),
-    //     )
-    //     .unwrap();
+    let shader = device
+        .create_shader_module(
+            vn::ShaderSource::Wgsl(include_str!("../shader/triangle.wgsl").into()),
+            vn::ShaderCompileInfo::default(),
+        )
+        .unwrap();
 
     let mut vertex_spv = io::Cursor::new(&include_bytes!("../shader/vert.spv")[..]);
     let mut fragment_spv = io::Cursor::new(&include_bytes!("../shader/frag.spv")[..]);
+
     let shader_vertex = device
         .create_shader_module(
             vn::ShaderSource::SpirV(&mut vertex_spv),
@@ -152,6 +155,30 @@ fn main() {
                     }
                 }
             }
+            WindowEvent::Resized(new_size) => {
+                if new_size.width > 0 && new_size.height > 0 {
+                    surface_config.width = new_size.width;
+                    surface_config.height = new_size.height;
+                    surface
+                        .configure(
+                            &device,
+                            &surface_config,
+                        )
+                        .unwrap();
+                }
+            }
+            WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                if new_inner_size.width > 0 && new_inner_size.height > 0 {
+                    surface_config.width = new_inner_size.width;
+                    surface_config.height = new_inner_size.height;
+                    surface
+                        .configure(
+                            &device,
+                            &surface_config,
+                        )
+                        .unwrap();
+                }
+            }
             _ => {}
         },
         Event::RedrawRequested(window_id) if window_id == window.id() => {
@@ -180,11 +207,11 @@ fn main() {
                 color_attachments: &[vn::RenderAttachmentInfo {
                     load_op: vn::LoadOp::Clear,
                     store_op: vn::StoreOp::Store,
-                    clear: vn::ClearOp::Color(vn::Color::GREEN),
+                    clear: vn::ClearOp::Color(vn::Color::norm(0.1, 0.2, 0.3, 1.0)),
                 }],
                 frame: &frame,
                 offset: (0, 0),
-                area: (window.inner_size().width, window.inner_size().height),
+                area: (surface_config.width, surface_config.height),
             });
 
             encoder.set_raster_pipeline(&pipeline);

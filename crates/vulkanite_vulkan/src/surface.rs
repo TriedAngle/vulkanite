@@ -7,7 +7,7 @@ use crate::adapter::Adapter;
 use crate::queue::Queue;
 use crate::sync::{BinarySemaphore, Fence};
 use ash::{extensions::khr, vk};
-use raw_window_handle::HasRawWindowHandle;
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle, RawWindowHandle};
 use std::sync::Arc;
 use std::{error, fmt};
 
@@ -319,13 +319,15 @@ impl Device {
 }
 
 impl Instance {
-    pub fn create_surface(
+    pub fn create_surface<T: HasRawDisplayHandle + HasRawWindowHandle>(
         &self,
-        window_handle: &dyn HasRawWindowHandle,
+        window_handle: &T,
     ) -> Result<Surface, SurfaceError> {
+        let display = window_handle.raw_display_handle();
+        let window = window_handle.raw_window_handle();
         let instance = self.shared.clone();
         let handle = unsafe {
-            ash_window::create_surface(&instance.entry, &instance.handle, window_handle, None)
+            ash_window::create_surface(&instance.entry, &instance.handle, display, window, None)
                 .map_err(SurfaceError::Other)?
         };
 

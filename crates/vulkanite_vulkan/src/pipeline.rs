@@ -281,8 +281,8 @@ impl Device {
         let dynamic_states = [
             vk::DynamicState::VIEWPORT,
             vk::DynamicState::SCISSOR,
-            // vk::DynamicState::BLEND_CONSTANTS,
-            // vk::DynamicState::STENCIL_REFERENCE,
+            vk::DynamicState::BLEND_CONSTANTS,
+            vk::DynamicState::STENCIL_REFERENCE,
         ];
 
         let mut stage_infos = Vec::new();
@@ -350,13 +350,9 @@ impl Device {
         ];
 
         let vk_multisample = vk::PipelineMultisampleStateCreateInfo::builder()
-            // .rasterization_samples(vk::SampleCountFlags::from_raw(info.multisample.count))
-            // .alpha_to_coverage_enable(info.multisample.alpha_to_coverage_enabled)
-            // .sample_mask(&vk_sample_mask);
-            .rasterization_samples(vk::SampleCountFlags::TYPE_1)
+            .rasterization_samples(vk::SampleCountFlags::from_raw(info.multisample.count))
             .alpha_to_coverage_enable(info.multisample.alpha_to_coverage_enabled)
-            .min_sample_shading(1.0)
-            .sample_mask(&[]);
+            .sample_mask(&vk_sample_mask);
 
         let mut vk_rasterization = vk::PipelineRasterizationStateCreateInfo::builder()
             .polygon_mode(conv::map_polygon_mode(info.primitive.polygon_mode))
@@ -387,33 +383,32 @@ impl Device {
 
         let mut vk_depth_stencil = vk::PipelineDepthStencilStateCreateInfo::builder();
 
-        // let mut vk_attachments = Vec::with_capacity(info.targets.len());
+        let mut vk_attachments = Vec::with_capacity(info.targets.len());
         let mut rendering_formats = Vec::with_capacity(info.targets.len());
         for target in info.targets {
             let vk_format: vk::Format = target.format.into();
             rendering_formats.push(vk_format);
-        //     let mut vk_attachment = vk::PipelineColorBlendAttachmentState::builder()
-        //         .color_write_mask(vk::ColorComponentFlags::from_raw(target.write_mask.bits()));
-        //
-        //     if let Some(ref blend) = target.blend {
-        //         let (color_op, color_src, color_dst) = conv::map_blend_component(&blend.color);
-        //         let (alpha_op, alpha_src, alpha_dst) = conv::map_blend_component(&blend.alpha);
-        //         vk_attachment = vk_attachment
-        //             .blend_enable(true)
-        //             .color_blend_op(color_op)
-        //             .src_color_blend_factor(color_src)
-        //             .dst_color_blend_factor(color_dst)
-        //             .alpha_blend_op(alpha_op)
-        //             .src_alpha_blend_factor(alpha_src)
-        //             .dst_alpha_blend_factor(alpha_dst);
-        //     }
-        //     vk_attachments.push(vk_attachment)
+            let mut vk_attachment = vk::PipelineColorBlendAttachmentState::builder()
+                .color_write_mask(vk::ColorComponentFlags::from_raw(target.write_mask.bits()));
+
+            if let Some(ref blend) = target.blend {
+                let (color_op, color_src, color_dst) = conv::map_blend_component(&blend.color);
+                let (alpha_op, alpha_src, alpha_dst) = conv::map_blend_component(&blend.alpha);
+                vk_attachment = vk_attachment
+                    .blend_enable(true)
+                    .color_blend_op(color_op)
+                    .src_color_blend_factor(color_src)
+                    .dst_color_blend_factor(color_dst)
+                    .alpha_blend_op(alpha_op)
+                    .src_alpha_blend_factor(alpha_src)
+                    .dst_alpha_blend_factor(alpha_dst);
+            }
+            vk_attachments.push(vk_attachment.build())
         }
 
-        // let vk_color_blend =
-        //     vk::PipelineColorBlendStateCreateInfo::builder()
-        //         .attachments(&vk_attachments)
-        //         .blend_constants([1.0, 1.0, 1.0, 1.0]);
+        let vk_color_blend =
+            vk::PipelineColorBlendStateCreateInfo::builder()
+                .attachments(&vk_attachments);
 
         // let noop_stencil_state = vk::StencilOpState {
         //     fail_op: vk::StencilOp::KEEP,
@@ -432,21 +427,6 @@ impl Device {
         //     max_depth_bounds: 1.0,
         //     ..Default::default()
         // };
-
-        let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
-            blend_enable: 0,
-            src_color_blend_factor: vk::BlendFactor::SRC_COLOR,
-            dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_DST_COLOR,
-            color_blend_op: vk::BlendOp::ADD,
-            src_alpha_blend_factor: vk::BlendFactor::ZERO,
-            dst_alpha_blend_factor: vk::BlendFactor::ZERO,
-            alpha_blend_op: vk::BlendOp::ADD,
-            color_write_mask: vk::ColorComponentFlags::RGBA,
-        }];
-
-        let vk_color_blend = vk::PipelineColorBlendStateCreateInfo::builder()
-            .logic_op(vk::LogicOp::CLEAR)
-            .attachments(&color_blend_attachment_states);
 
         let default_viewport = vk::Viewport {
             x: 0.0,
