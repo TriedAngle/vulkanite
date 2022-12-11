@@ -63,6 +63,9 @@ use crate::color::Color;
 use crate::surface::Frame;
 use ash::vk;
 
+
+
+
 #[derive(Copy, Clone)]
 pub struct RenderInfo<'a> {
     pub color_attachments: &'a [RenderAttachmentInfo],

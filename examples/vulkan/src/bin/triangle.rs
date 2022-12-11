@@ -1,4 +1,4 @@
-use vn::*;
+use std::io;
 use vulkanite_vulkan::vn;
 
 use winit::dpi::PhysicalSize;
@@ -7,7 +7,6 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
 use tracing::info;
-use vulkanite_vulkan::raw::vk::PipelineLayout;
 
 fn main() {
     tracing_subscriber::fmt()
@@ -24,12 +23,12 @@ fn main() {
         .build(&event_loop)
         .unwrap();
 
-    let instance = Instance::new(InstanceCreateInfo {
+    let instance = vn::Instance::new(vn::InstanceCreateInfo {
         application_name: Some("Testing".to_string()),
         engine_name: Some("Acute".to_string()),
-        vulkan_version: Version::V1_3,
+        vulkan_version: vn::Version::V1_3,
         render: true,
-        ..InstanceCreateInfo::default()
+        ..vn::InstanceCreateInfo::default()
     })
     .unwrap();
 
@@ -47,12 +46,12 @@ fn main() {
         .unwrap();
 
     let (device, mut queues) = adapter
-        .request_device(DeviceCreateInfo {
+        .request_device(vn::DeviceCreateInfo {
             queue_families: vec![
-                QueueCreateInfo::new(graphics_family, vec![1.0]),
-                QueueCreateInfo::new(transfer_family, vec![0.5]),
+                vn::QueueCreateInfo::new(graphics_family, vec![1.0]),
+                vn::QueueCreateInfo::new(transfer_family, vec![0.5]),
             ],
-            ..DeviceCreateInfo::default()
+            ..vn::DeviceCreateInfo::default()
         })
         .unwrap();
 
@@ -62,12 +61,12 @@ fn main() {
     surface
         .configure(
             &device,
-            &SurfaceConfig {
-                usage: TextureUsages::COLOR_ATTACHMENT,
+            &vn::SurfaceConfig {
+                usage: vn::TextureUsages::COLOR_ATTACHMENT,
                 format,
                 width: window.inner_size().width,
                 height: window.inner_size().height,
-                mode: PresentMode::Mailbox,
+                mode: vn::PresentMode::Mailbox,
             },
         )
         .unwrap();
@@ -76,56 +75,75 @@ fn main() {
     let render_semaphore = device.create_binary_semaphore();
     let render_fence = device.create_fence();
 
-    let shader = device
+    // let shader = device
+    //     .create_shader_module(
+    //         ShaderSource::Wgsl(include_str!("../shader/triangle.wgsl").into()),
+    //         ShaderCompileInfo::default(),
+    //     )
+    //     .unwrap();
+
+    let mut vertex_spv = io::Cursor::new(&include_bytes!("../shader/vert.spv")[..]);
+    let mut fragment_spv = io::Cursor::new(&include_bytes!("../shader/frag.spv")[..]);
+    let shader_vertex = device
         .create_shader_module(
-            ShaderSource::Wgsl(include_str!("../shader/triangle.wgsl").into()),
-            ShaderCompileInfo::default(),
-        )
-        .unwrap();
+            vn::ShaderSource::SpirV(&mut vertex_spv),
+            vn::ShaderCompileInfo::default()
+        ).unwrap();
+
+    let shader_fragment = device
+        .create_shader_module(
+            vn::ShaderSource::SpirV(&mut fragment_spv),
+            vn::ShaderCompileInfo::default()
+        ).unwrap();
 
     let pipeline_layout = device
-        .create_pipeline_layout(&PipelineLayoutInfo {
-            flags: PipelineLayoutFlags::empty(),
+        .create_pipeline_layout(&vn::PipelineLayoutInfo {
+            flags: vn::PipelineLayoutFlags::empty(),
             bind_group_layouts: &[],
             push_constant_ranges: &[],
         })
         .unwrap();
 
     let pipeline = device
-        .create_raster_pipeline(&RasterPipelineInfo {
+        .create_raster_pipeline(&vn::RasterPipelineInfo {
             layout: &pipeline_layout,
-            vertex: ShaderStage {
-                module: &shader,
-                entry_point: "vs_main",
+            vertex: vn::ShaderStage {
+                module: &shader_vertex,
+                entry_point: "main",
             },
             vertex_buffers: None,
-            fragment: Some(ShaderStage {
-                module: &shader,
-                entry_point: "fs_main",
+            fragment: Some(vn::ShaderStage {
+                module: &shader_fragment,
+                entry_point: "main",
             }),
-            primitive: PrimitiveState {
-                topology: PrimitiveTopology::TriangleList,
+            primitive: vn::PrimitiveState {
+                topology: vn::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
-                front_face: FrontFace::Clock,
-                cull_mode: Some(CullModeFlags::BACK),
-                polygon_mode: PolygonMode::Fill,
+                front_face: vn::FrontFace::CounterClock,
+                cull_mode: None,
+                polygon_mode: vn::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,
+                line_width: 1.0,
             },
-            multisample: MultisampleState {
+            multisample: vn::MultisampleState {
                 count: 1,
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            targets: &[ColorTargetState {
+            targets: &[vn::ColorTargetState {
                 format,
-                blend: Some(BlendState::REPLACE),
-                write_mask: ColorWrites::ALL,
+                blend: Some(vn::BlendState {
+                    color: vn::BlendComponent::REPLACE,
+                    alpha: vn::BlendComponent::REPLACE,
+                }),
+                write_mask: vn::ColorWrites::ALL,
             }],
         })
         .unwrap();
+
     event_loop.run(move |event, event_loop, control_flow| match event {
-        Event::WindowEvent { event, window_id } => match event {
+        Event::WindowEvent { event, .. } => match event {
             WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
             WindowEvent::KeyboardInput { ref input, .. } => {
                 if let Some(key) = input.virtual_keycode {
@@ -144,20 +162,25 @@ fn main() {
                 .unwrap()
                 .unwrap();
 
-            let mut encoder = device.command_encoder(CommandEncoderInfo { queue: &queue });
+            let mut encoder = device.command_encoder(vn::CommandEncoderInfo { queue: &queue });
 
             encoder.begin_encoding();
 
             encoder.frame_transition(
-                ImageTransitionLayout::Undefined,
-                ImageTransitionLayout::ColorAttachment,
+                vn::ImageTransitionLayout::Undefined,
+                vn::ImageTransitionLayout::ColorAttachment,
+                Some(vn::StageFlags::TOP_OF_PIPE),
+                None,
+                Some(vn::StageFlags::COLOR_ATTACHMENT_OUTPUT),
+                Some(vn::AccessFlags::COLOR_ATTACHMENT_WRITE),
                 &frame,
             );
-            encoder.begin_rendering(RenderInfo {
-                color_attachments: &[RenderAttachmentInfo {
-                    load_op: LoadOp::Clear,
-                    store_op: StoreOp::Store,
-                    clear: ClearOp::Color(Color::RED),
+
+            encoder.begin_rendering(vn::RenderInfo {
+                color_attachments: &[vn::RenderAttachmentInfo {
+                    load_op: vn::LoadOp::Clear,
+                    store_op: vn::StoreOp::Store,
+                    clear: vn::ClearOp::Color(vn::Color::GREEN),
                 }],
                 frame: &frame,
                 offset: (0, 0),
@@ -170,8 +193,12 @@ fn main() {
             encoder.end_rendering();
 
             encoder.frame_transition(
-                ImageTransitionLayout::ColorAttachment,
-                ImageTransitionLayout::Present,
+                vn::ImageTransitionLayout::ColorAttachment,
+                vn::ImageTransitionLayout::Present,
+                Some(vn::StageFlags::COLOR_ATTACHMENT_OUTPUT),
+                Some(vn::AccessFlags::COLOR_ATTACHMENT_WRITE),
+                Some(vn::StageFlags::BOTTOM_OF_PIPE),
+                None,
                 &frame,
             );
 

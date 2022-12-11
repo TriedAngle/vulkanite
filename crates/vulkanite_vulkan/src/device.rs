@@ -96,23 +96,27 @@ impl Adapter {
 
         let features = vk::PhysicalDeviceFeatures::from(features);
 
-        let mut device_info = vk::DeviceCreateInfo::builder()
+        let device_info = vk::DeviceCreateInfo::builder()
             .flags(vk::DeviceCreateFlags::empty())
             .enabled_layer_names(&layer_pointers)
             .enabled_extension_names(&extension_pointers)
             .enabled_features(&features)
             .queue_create_infos(&queue_infos);
 
+        let mut synchronization2 = vk::PhysicalDeviceSynchronization2Features::builder()
+            .synchronization2(true);
+
         let mut vulkan12features = vk::PhysicalDeviceVulkan12Features::builder()
-            .timeline_semaphore(true)
-            .build();
+            .timeline_semaphore(true);
 
         let mut vulkan_dynamic_rendering = vk::PhysicalDeviceDynamicRenderingFeatures::builder()
-            .dynamic_rendering(true)
-            .build();
+            .dynamic_rendering(true);
 
-        device_info.p_next = &vulkan_dynamic_rendering as *const _ as *const ffi::c_void;
-        vulkan_dynamic_rendering.p_next = &mut vulkan12features as *mut _ as *mut ffi::c_void;
+        let device_info = device_info
+            .push_next(&mut vulkan_dynamic_rendering)
+            .push_next(&mut vulkan12features)
+            .push_next(&mut synchronization2)
+            .build();
 
         let vk_handle_device = unsafe {
             instance

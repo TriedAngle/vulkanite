@@ -7,6 +7,7 @@ use ash::vk;
 use parking_lot::Mutex;
 use std::ops::Range;
 use std::sync::Arc;
+pub use vulkanite_types::pipeline::{AccessFlags, StageFlags};
 
 const BUFFER_COUNT: u32 = 8;
 
@@ -24,6 +25,7 @@ pub struct CommandEncoder {
     pub(crate) handle: Arc<Mutex<VkCommandEncoder>>,
     pub(crate) device: Arc<DeviceShared>,
 }
+
 
 impl CommandEncoder {
     pub fn finish(&mut self) -> CommandBuffer {
@@ -47,13 +49,24 @@ impl CommandEncoder {
         &mut self,
         old: ImageTransitionLayout,
         new: ImageTransitionLayout,
+        src_stage: Option<StageFlags>,
+        src_access: Option<AccessFlags>,
+        dst_stage: Option<StageFlags>,
+        dst_access: Option<AccessFlags>,
         frame: &Frame,
     ) {
         let mut handle = self.handle.lock();
         if handle.active == vk::CommandBuffer::null() {
             panic!("no active encoding");
         }
-        unsafe { handle.image_transition(old.into(), new.into(), frame.texture.handle) }
+        unsafe { handle.image_transition(
+            old.into(),
+            new.into(),
+            src_stage,
+            src_access,
+            dst_stage,
+            dst_access,
+            frame.texture.handle) }
     }
 
     pub fn begin_rendering(&mut self, info: RenderInfo<'_>) {
@@ -122,34 +135,81 @@ impl VkCommandEncoder {
         &mut self,
         old: vk::ImageLayout,
         new: vk::ImageLayout,
+        src_stage: Option<StageFlags>,
+        src_access: Option<AccessFlags>,
+        dst_stage: Option<StageFlags>,
+        dst_access: Option<AccessFlags>,
         image: vk::Image,
     ) {
-        let barrier = vk::ImageMemoryBarrier::builder()
-            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-            .old_layout(old)
-            .new_layout(new)
+        // let mut barrier = vk::ImageMemoryBarrier2::builder()
+        //     .old_layout(old)
+        //     .new_layout(new)
+        //     .image(image)
+        //     .subresource_range(
+        //         vk::ImageSubresourceRange::builder()
+        //             .aspect_mask(vk::ImageAspectFlags::COLOR)
+        //             .base_mip_level(0)
+        //             .level_count(1)
+        //             .base_array_layer(0)
+        //             .layer_count(1)
+        //             .build()
+        //     );
+
+        let mut barrier = vk::ImageMemoryBarrier::builder()
+            .old_layout(old.into())
+            .new_layout(new.into())
             .image(image)
             .subresource_range(
-                vk::ImageSubresourceRange::builder()
-                    .aspect_mask(vk::ImageAspectFlags::COLOR)
-                    .base_mip_level(0)
-                    .level_count(1)
-                    .base_array_layer(0)
-                    .layer_count(1)
-                    .build(),
-            )
-            .build();
+                        vk::ImageSubresourceRange::builder()
+                            .aspect_mask(vk::ImageAspectFlags::COLOR)
+                            .base_mip_level(0)
+                            .level_count(1)
+                            .base_array_layer(0)
+                            .layer_count(1)
+                            .build()
+            );
 
-        let barriers = [barrier];
+        let mut src_stage_mask = vk::PipelineStageFlags::empty();
+        let mut dst_stage_mask = vk::PipelineStageFlags::empty();
+        let mut dependency_flags = vk::DependencyFlags::empty();
+
+        if let Some(mask) = src_stage {
+            // barrier = barrier.src_stage_mask(vk::PipelineStageFlags::from_raw(mask.bits() as vk::Flags))
+            src_stage_mask = vk::PipelineStageFlags::from_raw(mask.bits());
+        }
+        if let Some(mask) = dst_stage {
+            // barrier = barrier.src_stage_mask(vk::PipelineStageFlags::from_raw(mask.bits() as vk::Flags))
+            dst_stage_mask = vk::PipelineStageFlags::from_raw(mask.bits());
+        }
+
+        if let Some(mask) = src_access {
+            barrier = barrier.src_access_mask(vk::AccessFlags::from_raw(mask.bits() as vk::Flags))
+        }
+        if let Some(mask) = dst_access {
+            barrier = barrier.dst_access_mask(vk::AccessFlags::from_raw(mask.bits() as vk::Flags))
+        }
+
+        let barriers = [barrier.build()];
+        //
+        // let dependency_info = vk::DependencyInfo::builder()
+        //     .dependency_flags(vk::DependencyFlags::empty())
+        //     .image_memory_barriers(&barriers);
+        //
+        //
+        // self.device.handle.cmd_pipeline_barrier2(
+        //     self.active,
+        //     &dependency_info,
+        // );
+
         self.device.handle.cmd_pipeline_barrier(
             self.active,
-            vk::PipelineStageFlags::TOP_OF_PIPE,
-            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            vk::DependencyFlags::empty(),
+            src_stage_mask,
+            dst_stage_mask,
+            dependency_flags,
             &[],
             &[],
             &barriers,
-        );
+        )
     }
 
     pub(crate) unsafe fn begin_rendering(

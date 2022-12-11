@@ -29,6 +29,7 @@ pub mod vn {
     pub use crate::sync::*;
     pub use crate::types::*;
     pub use crate::utils::Version;
+    pub use vulkanite_types::pipeline::*;
 }
 
 pub mod raw {

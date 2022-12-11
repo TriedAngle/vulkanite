@@ -4,9 +4,10 @@ use naga::back::spv;
 use naga::back::spv::WriterFlags;
 use naga::front::glsl;
 use naga::front::wgsl;
+use naga::front::spv as spv_front;
 use naga::valid::{Capabilities, ValidationFlags, Validator};
-use naga::{back, Module};
 use std::borrow::Cow;
+use std::io;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -18,7 +19,7 @@ pub struct ShaderCompileInfo {
 
 pub enum ShaderSource<'a> {
     Wgsl(Cow<'a, str>),
-    SpirV(Cow<'a, str>),
+    SpirV(&'a mut io::Cursor<&'a [u8]>),
 }
 
 pub struct ShaderModule {
@@ -32,6 +33,8 @@ pub enum ShaderError {
     WgslParse(#[from] wgsl::ParseError),
     #[error("GLSL Parse Error: {0:?}")]
     GlslParse(Vec<glsl::Error>),
+    #[error(transparent)]
+    SpirVParseFront(#[from] spv_front::Error),
     #[error(transparent)]
     SpirVParse(#[from] spv::Error),
     #[error(transparent)]
@@ -50,8 +53,25 @@ impl Device {
             ShaderSource::Wgsl(source) => {
                 wgsl::parse_str(&source).map_err(|e| ShaderError::WgslParse(e))
             }
-            ShaderSource::SpirV(spirv) => {
-                unimplemented!();
+            ShaderSource::SpirV(mut cursor) => {
+                let spirv = ash::util::read_spv(&mut cursor).unwrap();
+
+                let vk_info = vk::ShaderModuleCreateInfo::builder()
+                    .flags(vk::ShaderModuleCreateFlags::empty())
+                    .code(&spirv);
+
+                let handle = unsafe {
+                    self.shared
+                        .handle
+                        .create_shader_module(&vk_info, None)
+                        .map_err(DeviceError::Other)
+                        .map_err(ShaderError::Device)?
+                };
+
+                return Ok(ShaderModule {
+                    handle,
+                    device: self.shared.clone(),
+                })
             }
         }?;
 
@@ -70,6 +90,7 @@ impl Device {
 
         let spv =
             spv::write_vec(&module, &info, &opts, None).map_err(|e| ShaderError::SpirVParse(e))?;
+
         let vk_info = vk::ShaderModuleCreateInfo::builder()
             .flags(vk::ShaderModuleCreateFlags::empty())
             .code(&spv);

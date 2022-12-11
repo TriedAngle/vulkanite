@@ -163,6 +163,7 @@ pub struct PrimitiveState {
     pub polygon_mode: PolygonMode,
     pub unclipped_depth: bool,
     pub conservative: bool,
+    pub line_width: f32,
 }
 
 pub struct DepthStencilState {
@@ -280,13 +281,15 @@ impl Device {
         let dynamic_states = [
             vk::DynamicState::VIEWPORT,
             vk::DynamicState::SCISSOR,
-            vk::DynamicState::BLEND_CONSTANTS,
-            vk::DynamicState::STENCIL_REFERENCE,
+            // vk::DynamicState::BLEND_CONSTANTS,
+            // vk::DynamicState::STENCIL_REFERENCE,
         ];
+
         let mut stage_infos = Vec::new();
         let vertex_name = ffi::CString::new(info.vertex.entry_point).unwrap();
         // rust reference dies and rust compiler doesn't catch it
         let mut fragment_name = ffi::CString::new("").unwrap();
+
         stage_infos.push(
             vk::PipelineShaderStageCreateInfo::builder()
                 .name(&vertex_name)
@@ -294,6 +297,7 @@ impl Device {
                 .module(info.vertex.module.handle)
                 .build(),
         );
+
         if let Some(fragment) = &info.fragment {
             fragment_name = ffi::CString::new(fragment.entry_point).unwrap();
             stage_infos.push(
@@ -333,25 +337,31 @@ impl Device {
                     .vertex_attribute_descriptions(&vertex_attributes)
                     .build()
             }
-            None => vk::PipelineVertexInputStateCreateInfo {
-                s_type: vk::StructureType::PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-                p_next: ptr::null(),
-                flags: PipelineVertexInputStateCreateFlags::empty(),
-                vertex_binding_description_count: 0,
-                p_vertex_binding_descriptions: ptr::null(),
-                vertex_attribute_description_count: 0,
-                p_vertex_attribute_descriptions: ptr::null(),
-            },
+            None => vk::PipelineVertexInputStateCreateInfo::default()
         };
 
         let vk_input_assembly = vk::PipelineInputAssemblyStateCreateInfo::builder()
             .topology(conv::map_topology(info.primitive.topology))
             .primitive_restart_enable(info.primitive.strip_index_format.is_some());
 
+        let vk_sample_mask = [
+            info.multisample.mask as u32,
+            (info.multisample.mask >> 32) as u32,
+        ];
+
+        let vk_multisample = vk::PipelineMultisampleStateCreateInfo::builder()
+            // .rasterization_samples(vk::SampleCountFlags::from_raw(info.multisample.count))
+            // .alpha_to_coverage_enable(info.multisample.alpha_to_coverage_enabled)
+            // .sample_mask(&vk_sample_mask);
+            .rasterization_samples(vk::SampleCountFlags::TYPE_1)
+            .alpha_to_coverage_enable(info.multisample.alpha_to_coverage_enabled)
+            .min_sample_shading(1.0)
+            .sample_mask(&[]);
+
         let mut vk_rasterization = vk::PipelineRasterizationStateCreateInfo::builder()
             .polygon_mode(conv::map_polygon_mode(info.primitive.polygon_mode))
             .front_face(conv::map_front_face(info.primitive.front_face))
-            .line_width(1.0);
+            .line_width(info.primitive.line_width);
 
         if let Some(face_flags) = info.primitive.cull_mode {
             vk_rasterization = vk_rasterization.cull_mode(conv::map_cull_face(face_flags));
@@ -377,48 +387,97 @@ impl Device {
 
         let mut vk_depth_stencil = vk::PipelineDepthStencilStateCreateInfo::builder();
 
+        // let mut vk_attachments = Vec::with_capacity(info.targets.len());
+        let mut rendering_formats = Vec::with_capacity(info.targets.len());
+        for target in info.targets {
+            let vk_format: vk::Format = target.format.into();
+            rendering_formats.push(vk_format);
+        //     let mut vk_attachment = vk::PipelineColorBlendAttachmentState::builder()
+        //         .color_write_mask(vk::ColorComponentFlags::from_raw(target.write_mask.bits()));
+        //
+        //     if let Some(ref blend) = target.blend {
+        //         let (color_op, color_src, color_dst) = conv::map_blend_component(&blend.color);
+        //         let (alpha_op, alpha_src, alpha_dst) = conv::map_blend_component(&blend.alpha);
+        //         vk_attachment = vk_attachment
+        //             .blend_enable(true)
+        //             .color_blend_op(color_op)
+        //             .src_color_blend_factor(color_src)
+        //             .dst_color_blend_factor(color_dst)
+        //             .alpha_blend_op(alpha_op)
+        //             .src_alpha_blend_factor(alpha_src)
+        //             .dst_alpha_blend_factor(alpha_dst);
+        //     }
+        //     vk_attachments.push(vk_attachment)
+        }
+
+        // let vk_color_blend =
+        //     vk::PipelineColorBlendStateCreateInfo::builder()
+        //         .attachments(&vk_attachments)
+        //         .blend_constants([1.0, 1.0, 1.0, 1.0]);
+
+        // let noop_stencil_state = vk::StencilOpState {
+        //     fail_op: vk::StencilOp::KEEP,
+        //     pass_op: vk::StencilOp::KEEP,
+        //     depth_fail_op: vk::StencilOp::KEEP,
+        //     compare_op: vk::CompareOp::ALWAYS,
+        //     ..Default::default()
+        // };
+        //
+        // let vk_depth_stencil = vk::PipelineDepthStencilStateCreateInfo {
+        //     depth_test_enable: 1,
+        //     depth_write_enable: 1,
+        //     depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
+        //     front: noop_stencil_state,
+        //     back: noop_stencil_state,
+        //     max_depth_bounds: 1.0,
+        //     ..Default::default()
+        // };
+
+        let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
+            blend_enable: 0,
+            src_color_blend_factor: vk::BlendFactor::SRC_COLOR,
+            dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_DST_COLOR,
+            color_blend_op: vk::BlendOp::ADD,
+            src_alpha_blend_factor: vk::BlendFactor::ZERO,
+            dst_alpha_blend_factor: vk::BlendFactor::ZERO,
+            alpha_blend_op: vk::BlendOp::ADD,
+            color_write_mask: vk::ColorComponentFlags::RGBA,
+        }];
+
+        let vk_color_blend = vk::PipelineColorBlendStateCreateInfo::builder()
+            .logic_op(vk::LogicOp::CLEAR)
+            .attachments(&color_blend_attachment_states);
+
+        let default_viewport = vk::Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+            min_depth: 0.0,
+            max_depth: 0.0
+        };
+
+        let default_scissor = vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent: vk::Extent2D { width: 1, height: 1 }
+        };
+
         let vk_viewport = vk::PipelineViewportStateCreateInfo::builder()
             .flags(vk::PipelineViewportStateCreateFlags::empty())
+            .viewports(std::slice::from_ref(&default_viewport))
+            .scissors(std::slice::from_ref(&default_scissor))
             .scissor_count(1)
             .viewport_count(1);
 
-        let vk_sample_mask = [
-            info.multisample.mask as u32,
-            (info.multisample.mask >> 32) as u32,
-        ];
-
-        let vk_multisample = vk::PipelineMultisampleStateCreateInfo::builder()
-            .rasterization_samples(vk::SampleCountFlags::from_raw(info.multisample.count))
-            .alpha_to_coverage_enable(info.multisample.alpha_to_coverage_enabled)
-            .sample_mask(&vk_sample_mask);
-
-        let mut vk_attachments = Vec::with_capacity(info.targets.len());
-        for target in info.targets {
-            let mut vk_attachment = vk::PipelineColorBlendAttachmentState::builder()
-                .color_write_mask(vk::ColorComponentFlags::from_raw(target.write_mask.bits()));
-
-            if let Some(ref blend) = target.blend {
-                let (color_op, color_src, color_dst) = conv::map_blend_component(&blend.color);
-                let (alpha_op, alpha_src, alpha_dst) = conv::map_blend_component(&blend.alpha);
-                vk_attachment = vk_attachment
-                    .blend_enable(true)
-                    .color_blend_op(color_op)
-                    .src_color_blend_factor(color_src)
-                    .dst_color_blend_factor(color_dst)
-                    .alpha_blend_op(alpha_op)
-                    .src_alpha_blend_factor(alpha_src)
-                    .dst_alpha_blend_factor(alpha_dst);
-            }
-            vk_attachments.push(vk_attachment.build())
-        }
-
-        let vk_color_blend =
-            vk::PipelineColorBlendStateCreateInfo::builder().attachments(&vk_attachments);
-
         let vk_dynamic_state =
-            vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states);
+            vk::PipelineDynamicStateCreateInfo::builder()
+                .dynamic_states(&dynamic_states);
 
-        let vk_infos = [vk::GraphicsPipelineCreateInfo::builder()
+        let mut pipeline_rendering_info = vk::PipelineRenderingCreateInfo::builder()
+            .color_attachment_formats(&rendering_formats);
+
+        let mut pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
+            .push_next(&mut pipeline_rendering_info)
             .layout(info.layout.handle)
             .stages(&stage_infos)
             .vertex_input_state(&vertex_state)
@@ -426,10 +485,12 @@ impl Device {
             .rasterization_state(&vk_rasterization)
             .viewport_state(&vk_viewport)
             .multisample_state(&vk_multisample)
-            .depth_stencil_state(&vk_depth_stencil)
+            // .depth_stencil_state(&vk_depth_stencil)
             .color_blend_state(&vk_color_blend)
-            .dynamic_state(&vk_dynamic_state)
-            .build()];
+            .render_pass(vk::RenderPass::null())
+            .dynamic_state(&vk_dynamic_state);
+
+        let vk_infos = [pipeline_info.build()];
 
         let mut pipeline_handles = unsafe {
             self.shared
