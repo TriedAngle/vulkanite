@@ -295,10 +295,10 @@ impl VkCommandEncoder {
     ) {
         self.device.handle.cmd_draw(
             self.active,
-            start_vertex,
             count_vertex,
-            start_instance,
             count_instance,
+            start_vertex,
+            start_instance,
         )
     }
 
