@@ -261,10 +261,9 @@ fn main() {
             encoder.bind_vertex_buffer(0, &vertex_buffer);
 
             let cam_pos = na::vec3(0.0, 0.0, -2.0);
-            let view = na::translate(&na::Mat4::from_element(1.0), &cam_pos);
+            let view = na::translate(&na::Mat4::identity(), &cam_pos);
             let mut projection = na::perspective(70.0 * std::f32::consts::PI / 180.0, 1700.0 / 900.0, 0.1, 200.0);
-            projection.data.0[1][1] *= -1.0;
-            let model = na::rotate(&na::Mat4::from_element(1.0), frame_count as f32 * 0.4 * std::f32::consts::PI / 180.0, &na::vec3(0.0, 1.0, 0.0));
+            let model = na::rotate(&na::Mat4::identity(), frame_count as f32 * 0.4 * std::f32::consts::PI / 180.0, &na::vec3(0.0, 1.0, 0.0));
             let matrix = projection * view * model;
 
             let push_constant = MeshPushConstants {
