@@ -1,4 +1,5 @@
-pub mod pipeline;
+mod buffer;
+mod pipeline;
 
 bitflags::bitflags! {
     #[repr(transparent)]
@@ -22,3 +23,18 @@ pub enum PresentMode {
     Fifo = 2,
     FifoRelaxed = 3,
 }
+
+impl From<i32> for PresentMode {
+    fn from(val: i32) -> Self {
+        match val {
+            0 => Self::Immediate,
+            1 => Self::Mailbox,
+            2 => Self::Fifo,
+            3 => Self::FifoRelaxed,
+            _ => panic!("Invalid value for Present Mode"),
+        }
+    }
+}
+
+pub use buffer::*;
+pub use pipeline::*;

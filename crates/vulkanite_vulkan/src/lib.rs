@@ -1,6 +1,7 @@
 extern crate core;
 
 mod adapter;
+mod buffer;
 mod color;
 mod command;
 mod conv;
@@ -18,9 +19,10 @@ mod utils;
 
 pub mod vn {
     pub use crate::adapter::Adapter;
+    pub use crate::buffer::{Buffer, BufferInitInfo};
     pub use crate::color::Color;
     pub use crate::command::*;
-    pub use crate::device::{Device, DeviceCreateInfo};
+    pub use crate::device::{Device, DeviceCreateInfo, DeviceError};
     pub use crate::instance::{Instance, InstanceCreateInfo, InstanceCreationError};
     pub use crate::pipeline::*;
     pub use crate::queue::{Queue, QueueCreateInfo, QueueFamily};
@@ -29,7 +31,7 @@ pub mod vn {
     pub use crate::sync::*;
     pub use crate::types::*;
     pub use crate::utils::Version;
-    pub use vulkanite_types::pipeline::*;
+    pub use vulkanite_types::*;
 }
 
 pub mod raw {

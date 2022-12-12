@@ -7,7 +7,9 @@ edition = "2021"
 vulkanite_types = { path = "../vulkanite_types", version = "0.1" }
 ash = { version = "0.37", default-features = false, features = ["linked", "debug"] }
 ash-window = "0.12.0"
-gpu-allocator = "0.21.0"
+#gpu-allocator = "0.21.0"
+gpu-alloc = "0.5.0"
+gpu-alloc-ash = "0.5.0"
 raw-window-handle = "0.5.0"
 naga = {version = "0.10.0", features = ["glsl-in", "wgsl-in", "spv-in", "spv-out"]}
 thiserror = "1.0.37"
@@ -19,4 +21,4 @@ parking_lot = "0.12.0"
 crossbeam = "0.8.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-ash-molten = "0.13"
+ash-molten = "0.14"

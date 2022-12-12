@@ -7,7 +7,6 @@ use crate::types::{Extensions, Features};
 use tracing::info;
 
 use ash::vk;
-use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
@@ -29,7 +28,7 @@ impl Debug for DeviceShared {
 
 pub struct Device {
     pub(crate) shared: Arc<DeviceShared>,
-    pub(crate) allocator: Mutex<Allocator>,
+    pub(crate) allocator: Mutex<gpu_alloc::GpuAllocator<vk::DeviceMemory>>,
     pub(crate) command_encoders: Mutex<HashMap<u64, CommandEncoder>>,
 }
 
@@ -103,14 +102,14 @@ impl Adapter {
             .enabled_features(&features)
             .queue_create_infos(&queue_infos);
 
-        let mut synchronization2 = vk::PhysicalDeviceSynchronization2Features::builder()
-            .synchronization2(true);
+        let mut synchronization2 =
+            vk::PhysicalDeviceSynchronization2Features::builder().synchronization2(true);
 
-        let mut vulkan12features = vk::PhysicalDeviceVulkan12Features::builder()
-            .timeline_semaphore(true);
+        let mut vulkan12features =
+            vk::PhysicalDeviceVulkan12Features::builder().timeline_semaphore(true);
 
-        let mut vulkan_dynamic_rendering = vk::PhysicalDeviceDynamicRenderingFeatures::builder()
-            .dynamic_rendering(true);
+        let mut vulkan_dynamic_rendering =
+            vk::PhysicalDeviceDynamicRenderingFeatures::builder().dynamic_rendering(true);
 
         let device_info = device_info
             .push_next(&mut vulkan_dynamic_rendering)
@@ -150,14 +149,28 @@ impl Adapter {
                 })
         };
 
-        let allocator = Allocator::new(&AllocatorCreateDesc {
-            instance: instance.handle.clone(),
-            device: vk_device.handle.clone(),
-            physical_device: self.handle.clone(),
-            debug_settings: Default::default(),
-            buffer_device_address: false,
-        })
-        .unwrap();
+        let mem_properties = unsafe {
+            self.instance
+                .handle
+                .get_physical_device_memory_properties(self.handle)
+        };
+
+        let memory_types =
+            &mem_properties.memory_types[..mem_properties.memory_type_count as usize];
+
+        let allocator = {
+            let config = gpu_alloc::Config::i_am_prototyping();
+            let properties = unsafe {
+                gpu_alloc_ash::device_properties(
+                    &self.instance.handle,
+                    instance.version.to_vulkan(),
+                    self.handle,
+                )
+                .unwrap()
+            };
+
+            gpu_alloc::GpuAllocator::new(config, properties)
+        };
 
         let device = Device {
             shared: vk_device.clone(),

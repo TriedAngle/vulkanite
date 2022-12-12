@@ -1,25 +1,5 @@
 use ash::vk;
-use bitflags::bitflags;
-
-bitflags! {
-    #[repr(transparent)]
-    pub struct TextureUsages: u32 {
-        const TRANSFER_SRC = 1 << 0;
-        const TRANSFER_DST = 1 << 1;
-        const SAMPLED = 1 << 2;
-        const STORAGE = 1 << 3;
-        const COLOR_ATTACHMENT = 1 << 4;
-        const DEPTH_STENCIL_ATTACHMENT = 1 << 5;
-        const TRANSIENT_ATTACHMENT = 1 << 6;
-        const INPUT_ATTACHMENT = 1 << 7;
-    }
-}
-
-impl From<TextureUsages> for vk::ImageUsageFlags {
-    fn from(usages: TextureUsages) -> Self {
-        vk::ImageUsageFlags::from_raw(vk::Flags::from(usages.bits))
-    }
-}
+use vulkanite_types as vt;
 
 #[repr(i32)]
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -451,37 +431,9 @@ impl From<TextureFormatColorSpace> for vk::ColorSpaceKHR {
     }
 }
 
-#[repr(i32)]
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum PresentMode {
-    Immediate = 0,
-    Mailbox = 1,
-    Fifo = 2,
-    FifoRelaxed = 3,
-}
-
-impl From<i32> for PresentMode {
-    fn from(val: i32) -> Self {
-        match val {
-            0 => Self::Immediate,
-            1 => Self::Mailbox,
-            2 => Self::Fifo,
-            3 => Self::FifoRelaxed,
-            _ => panic!("Invalid value for Present Mode"),
-        }
-    }
-}
-
-impl From<PresentMode> for vk::PresentModeKHR {
-    fn from(p: PresentMode) -> Self {
-        vk::PresentModeKHR::from_raw(p as i32)
-    }
-}
-
 pub struct Texture {
     pub(crate) handle: vk::Image,
-    pub(crate) allocation: Option<gpu_allocator::vulkan::Allocation>,
-    pub(crate) usage: TextureUsages,
+    pub(crate) usage: vt::TextureUsages,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -522,15 +474,16 @@ impl From<ImageTransitionLayout> for vk::ImageLayout {
 #[cfg(test)]
 mod image_type_tests {
     use super::*;
+    use crate::conv;
     use ash::vk;
 
     #[test]
     fn t_usages() {
-        let usages = TextureUsages::TRANSFER_DST | TextureUsages::COLOR_ATTACHMENT;
-        assert!(usages.contains(TextureUsages::TRANSFER_DST));
-        assert!(usages.contains(TextureUsages::COLOR_ATTACHMENT));
-        assert!(!usages.contains(TextureUsages::TRANSFER_SRC));
-        let vk_usages = vk::ImageUsageFlags::from(usages);
+        let usages = vt::TextureUsages::TRANSFER_DST | vt::TextureUsages::COLOR_ATTACHMENT;
+        assert!(usages.contains(vt::TextureUsages::TRANSFER_DST));
+        assert!(usages.contains(vt::TextureUsages::COLOR_ATTACHMENT));
+        assert!(!usages.contains(vt::TextureUsages::TRANSFER_SRC));
+        let vk_usages = conv::map_texture_usages(usages);
         assert!(vk_usages.contains(vk::ImageUsageFlags::TRANSFER_DST));
         assert!(vk_usages.contains(vk::ImageUsageFlags::COLOR_ATTACHMENT));
         assert!(!vk_usages.contains(vk::ImageUsageFlags::TRANSFER_SRC));

@@ -1,15 +1,17 @@
 use crate::device::{Device, DeviceShared};
 use crate::instance::{Instance, InstanceShared};
-use crate::types::{PresentMode, Texture, TextureFormat, TextureUsages};
+use crate::types::{Texture, TextureFormat};
 use tracing::{info, warn};
 
 use crate::adapter::Adapter;
+use crate::conv;
 use crate::queue::Queue;
 use crate::sync::{BinarySemaphore, Fence};
 use ash::{extensions::khr, vk};
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle, RawWindowHandle};
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::sync::Arc;
 use std::{error, fmt};
+use vulkanite_types as vt;
 
 #[derive(Clone)]
 pub struct Surface {
@@ -40,7 +42,7 @@ impl Surface {
     pub fn present_modes(
         &self,
         adapter: &Adapter,
-    ) -> Result<impl Iterator<Item = PresentMode>, SurfaceError> {
+    ) -> Result<impl Iterator<Item = vt::PresentMode>, SurfaceError> {
         let modes = unsafe {
             self.loader
                 .get_physical_device_surface_present_modes(adapter.handle, self.handle)
@@ -49,7 +51,7 @@ impl Surface {
 
         Ok(modes
             .into_iter()
-            .map(|mode| PresentMode::from(mode.as_raw())))
+            .map(|mode| vt::PresentMode::from(mode.as_raw())))
     }
 
     pub fn acquire_frame(
@@ -96,7 +98,6 @@ impl Surface {
         let texture = Frame {
             texture: Texture {
                 handle: sc.images[index as usize],
-                allocation: None,
                 usage: sc.config.usage,
             },
             view: sc.image_views[index as usize],
@@ -188,7 +189,7 @@ impl Frame {
             .wait_semaphores(&semaphores)
             .image_indices(&image_indices);
 
-        let suboptimal = {
+        let _suboptimal = {
             let handle = queue.handle.lock();
             unsafe {
                 sc.loader
@@ -249,7 +250,7 @@ impl Device {
                     "Present Mode: \"{:?}\" not present on Adapter => Fallback to \"Fifo\"",
                     config.mode
                 );
-                PresentMode::Fifo
+                vt::PresentMode::Fifo
             }
         };
 
@@ -260,11 +261,11 @@ impl Device {
             .image_format(config.format.into())
             .image_color_space(color_space)
             .image_extent(surface_resolution)
-            .image_usage(config.usage.into())
+            .image_usage(conv::map_texture_usages(config.usage))
             .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
             .pre_transform(pre_transform)
             .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-            .present_mode(mode.into())
+            .present_mode(conv::map_present_mode(mode))
             .clipped(true)
             .old_swapchain(old)
             .image_array_layers(1);
@@ -344,11 +345,11 @@ impl Instance {
 
 #[derive(Debug, Copy, Clone)]
 pub struct SurfaceConfig {
-    pub usage: TextureUsages,
+    pub usage: vt::TextureUsages,
     pub format: TextureFormat,
     pub width: u32,
     pub height: u32,
-    pub mode: PresentMode,
+    pub mode: vt::PresentMode,
 }
 
 impl Drop for Surface {

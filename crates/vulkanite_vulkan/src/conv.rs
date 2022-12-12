@@ -1,6 +1,8 @@
 use crate::pipeline::{CullModeFlags, FrontFace, PolygonMode, PrimitiveTopology, ShaderStages};
 use ash::vk;
-use vulkanite_types::pipeline::{BlendComponent, BlendFactor, BlendOperation, VertexFormat};
+use vulkanite_types::BufferSharing;
+use vulkanite_types::{BlendComponent, BlendFactor, BlendOperation, VertexFormat};
+use vulkanite_types::{BufferUsages, PresentMode, TextureUsages};
 
 pub fn map_shader_stage(stage: ShaderStages) -> vk::ShaderStageFlags {
     let mut flags = vk::ShaderStageFlags::empty();
@@ -138,4 +140,46 @@ pub fn map_vertex_format(vertex_format: VertexFormat) -> vk::Format {
         VertexFormat::Float64x3 => vk::Format::R64G64B64_SFLOAT,
         VertexFormat::Float64x4 => vk::Format::R64G64B64A64_SFLOAT,
     }
+}
+
+pub fn map_buffer_usage(usage: BufferUsages) -> vk::BufferUsageFlags {
+    let mut flags = vk::BufferUsageFlags::empty();
+
+    if usage.contains(BufferUsages::COPY_SRC) {
+        flags |= vk::BufferUsageFlags::TRANSFER_SRC;
+    }
+    if usage.contains(BufferUsages::COPY_DST) {
+        flags |= vk::BufferUsageFlags::TRANSFER_DST;
+    }
+    if usage.contains(BufferUsages::UNIFORM) {
+        flags |= vk::BufferUsageFlags::UNIFORM_BUFFER;
+    }
+    if usage.contains(BufferUsages::STORAGE_READ | BufferUsages::STORAGE_READ_WRITE) {
+        flags |= vk::BufferUsageFlags::STORAGE_BUFFER;
+    }
+    if usage.contains(BufferUsages::INDEX) {
+        flags |= vk::BufferUsageFlags::INDEX_BUFFER;
+    }
+    if usage.contains(BufferUsages::VERTEX) {
+        flags |= vk::BufferUsageFlags::VERTEX_BUFFER;
+    }
+    if usage.contains(BufferUsages::INDIRECT) {
+        flags |= vk::BufferUsageFlags::INDIRECT_BUFFER;
+    }
+    flags
+}
+
+pub fn map_buffer_sharing(sharing: BufferSharing) -> vk::SharingMode {
+    match sharing {
+        BufferSharing::Exclusive => vk::SharingMode::EXCLUSIVE,
+        BufferSharing::Concurrent => vk::SharingMode::CONCURRENT,
+    }
+}
+
+pub fn map_texture_usages(usages: TextureUsages) -> vk::ImageUsageFlags {
+    vk::ImageUsageFlags::from_raw(vk::Flags::from(usages.bits()))
+}
+
+pub fn map_present_mode(present_mode: PresentMode) -> vk::PresentModeKHR {
+    vk::PresentModeKHR::from_raw(present_mode as i32)
 }

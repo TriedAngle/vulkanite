@@ -1,12 +1,62 @@
-use std::io;
+use std::{io, mem};
 use vulkanite_vulkan::vn;
 
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, Event, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
-
+use nalgebra_glm as na;
 use tracing::info;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 3],
+}
+
+const VERTICES: &[Vertex] = &[
+    Vertex {
+        position: [0.5, 0.5, 0.0],
+        color: [1.0, 0.0, 0.0],
+    },
+    Vertex {
+        position: [-0.5, 0.5, 0.0],
+        color: [0.0, 1.0, 0.0],
+    },
+    Vertex {
+        position: [0.0, -0.5, 0.0],
+        color: [0.0, 0.0, 1.0],
+    },
+];
+
+impl Vertex {
+    pub fn desc<'a>() -> vn::VertexBufferLayout<'a> {
+        vn::VertexBufferLayout {
+            array_stride: mem::size_of::<Vertex>() as vn::BufferAddress,
+            step_mode: vn::VertexStepMode::Vertex,
+            attributes: &[
+                vn::VertexAttribute {
+                    format: vn::VertexFormat::Float32x3,
+                    offset: 0,
+                    location: 0,
+                },
+                vn::VertexAttribute {
+                    format: vn::VertexFormat::Float32x3,
+                    offset: mem::size_of::<[f32; 3]>() as vn::BufferAddress,
+                    location: 1,
+                },
+            ],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct MeshPushConstants {
+    data: [f32; 4],
+    matrix: [[f32; 4]; 4],
+}
 
 fn main() {
     tracing_subscriber::fmt()
@@ -66,23 +116,7 @@ fn main() {
         mode: vn::PresentMode::Mailbox,
     };
 
-    surface
-        .configure(
-            &device,
-            &surface_config
-        )
-        .unwrap();
-
-    let present_semaphore = device.create_binary_semaphore();
-    let render_semaphore = device.create_binary_semaphore();
-    let render_fence = device.create_fence();
-
-    let shader = device
-        .create_shader_module(
-            vn::ShaderSource::Wgsl(include_str!("../shader/triangle.wgsl").into()),
-            vn::ShaderCompileInfo::default(),
-        )
-        .unwrap();
+    surface.configure(&device, &surface_config).unwrap();
 
     let mut vertex_spv = io::Cursor::new(&include_bytes!("../shader/vert.spv")[..]);
     let mut fragment_spv = io::Cursor::new(&include_bytes!("../shader/frag.spv")[..]);
@@ -90,20 +124,34 @@ fn main() {
     let shader_vertex = device
         .create_shader_module(
             vn::ShaderSource::SpirV(&mut vertex_spv),
-            vn::ShaderCompileInfo::default()
-        ).unwrap();
+            vn::ShaderCompileInfo::default(),
+        )
+        .unwrap();
 
     let shader_fragment = device
         .create_shader_module(
             vn::ShaderSource::SpirV(&mut fragment_spv),
-            vn::ShaderCompileInfo::default()
-        ).unwrap();
+            vn::ShaderCompileInfo::default(),
+        )
+        .unwrap();
+
+    let vertex_buffer = device
+        .create_buffer_init(&vn::BufferInitInfo {
+            label: None,
+            contents: bytemuck::cast_slice(VERTICES),
+            usage: vn::BufferUsages::VERTEX | vn::BufferUsages::MAP_WRITE,
+            sharing: vn::BufferSharing::Exclusive,
+        })
+        .unwrap();
 
     let pipeline_layout = device
         .create_pipeline_layout(&vn::PipelineLayoutInfo {
             flags: vn::PipelineLayoutFlags::empty(),
             bind_group_layouts: &[],
-            push_constant_ranges: &[],
+            push_constant_ranges: &[vn::PushConstantRange {
+                stages: vn::ShaderStages::VERTEX,
+                range: 0..mem::size_of::<MeshPushConstants>() as u32
+            }],
         })
         .unwrap();
 
@@ -114,7 +162,7 @@ fn main() {
                 module: &shader_vertex,
                 entry_point: "main",
             },
-            vertex_buffers: None,
+            vertex_buffers: &[Vertex::desc()],
             fragment: Some(vn::ShaderStage {
                 module: &shader_fragment,
                 entry_point: "main",
@@ -145,6 +193,11 @@ fn main() {
         })
         .unwrap();
 
+    let present_semaphore = device.create_binary_semaphore();
+    let render_semaphore = device.create_binary_semaphore();
+    let render_fence = device.create_fence();
+    let mut frame_count = 0;
+
     event_loop.run(move |event, event_loop, control_flow| match event {
         Event::WindowEvent { event, .. } => match event {
             WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
@@ -159,24 +212,14 @@ fn main() {
                 if new_size.width > 0 && new_size.height > 0 {
                     surface_config.width = new_size.width;
                     surface_config.height = new_size.height;
-                    surface
-                        .configure(
-                            &device,
-                            &surface_config,
-                        )
-                        .unwrap();
+                    surface.configure(&device, &surface_config).unwrap();
                 }
             }
             WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                 if new_inner_size.width > 0 && new_inner_size.height > 0 {
                     surface_config.width = new_inner_size.width;
                     surface_config.height = new_inner_size.height;
-                    surface
-                        .configure(
-                            &device,
-                            &surface_config,
-                        )
-                        .unwrap();
+                    surface.configure(&device, &surface_config).unwrap();
                 }
             }
             _ => {}
@@ -214,8 +257,23 @@ fn main() {
                 area: (surface_config.width, surface_config.height),
             });
 
-            encoder.set_raster_pipeline(&pipeline);
-            encoder.draw(0..3, 0..1);
+            encoder.bind_raster_pipeline(&pipeline);
+            encoder.bind_vertex_buffer(0, &vertex_buffer);
+
+            let cam_pos = na::vec3(0.0, 0.0, -2.0);
+            let view = na::translate(&na::Mat4::from_element(1.0), &cam_pos);
+            let mut projection = na::perspective(70.0 * std::f32::consts::PI / 180.0, 1700.0 / 900.0, 0.1, 200.0);
+            projection.data.0[1][1] *= -1.0;
+            let model = na::rotate(&na::Mat4::from_element(1.0), frame_count as f32 * 0.4 * std::f32::consts::PI / 180.0, &na::vec3(0.0, 1.0, 0.0));
+            let matrix = projection * view * model;
+
+            let push_constant = MeshPushConstants {
+                data: [0.0, 0.0, 0.0, 0.0],
+                matrix: matrix.data.0,
+            };
+
+            encoder.push_constants(&pipeline_layout, vn::ShaderStages::VERTEX, 0, bytemuck::cast_slice(&[push_constant]));
+            encoder.draw(0..VERTICES.len() as u32, 0..1);
 
             encoder.end_rendering();
 
@@ -241,10 +299,16 @@ fn main() {
             frame
                 .present(&queue, &surface, &[&render_semaphore])
                 .unwrap();
+
+            frame_count += 1;
         }
         Event::MainEventsCleared => {
             window.request_redraw();
         }
+        Event::LoopDestroyed => {
+
+        }
         _ => {}
     });
+
 }

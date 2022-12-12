@@ -3,13 +3,12 @@ use crate::device::{Device, DeviceError, DeviceShared};
 use crate::shader::ShaderModule;
 use crate::types::TextureFormat;
 use ash::vk;
-use ash::vk::PipelineVertexInputStateCreateFlags;
 use std::collections::BTreeMap;
+use std::ffi;
 use std::num::NonZeroU32;
 use std::ops::Range;
 use std::sync::Arc;
-use std::{ffi, ptr};
-pub use vulkanite_types::pipeline::{BlendState, ColorWrites, VertexFormat};
+pub use vulkanite_types as vt;
 
 bitflags::bitflags! {
     #[repr(transparent)]
@@ -184,21 +183,20 @@ pub struct MultisampleState {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ColorTargetState {
     pub format: TextureFormat,
-    pub blend: Option<BlendState>,
-    pub write_mask: ColorWrites,
+    pub blend: Option<vt::BlendState>,
+    pub write_mask: vt::ColorWrites,
 }
 
-pub type BufferAddress = u64;
 pub type ShaderLocation = u32;
 
 pub struct VertexAttribute {
-    pub format: VertexFormat,
-    pub offset: BufferAddress,
-    pub shader_location: ShaderLocation,
+    pub format: vt::VertexFormat,
+    pub offset: vt::BufferAddress,
+    pub location: ShaderLocation,
 }
 
 pub struct VertexBufferLayout<'a> {
-    pub array_stride: BufferAddress,
+    pub array_stride: vt::BufferAddress,
     pub step_mode: VertexStepMode,
     pub attributes: &'a [VertexAttribute],
 }
@@ -206,7 +204,7 @@ pub struct VertexBufferLayout<'a> {
 pub struct RasterPipelineInfo<'a> {
     pub layout: &'a PipelineLayout,
     pub vertex: ShaderStage<'a>,
-    pub vertex_buffers: Option<&'a [VertexBufferLayout<'a>]>,
+    pub vertex_buffers: &'a [VertexBufferLayout<'a>],
     pub fragment: Option<ShaderStage<'a>>,
     pub primitive: PrimitiveState,
     // pub depth_stencil:
@@ -263,7 +261,7 @@ impl Device {
                 .map_err(DeviceError::Other)?
         };
 
-        let mut binding_arrays = BTreeMap::new();
+        let binding_arrays = BTreeMap::new();
         // for (group, &layout) in info.bind_group_layouts.iter().enumerate() {
         //
         // }
@@ -285,12 +283,40 @@ impl Device {
             vk::DynamicState::STENCIL_REFERENCE,
         ];
 
-        let mut stage_infos = Vec::new();
         let vertex_name = ffi::CString::new(info.vertex.entry_point).unwrap();
         // rust reference dies and rust compiler doesn't catch it
+        #[allow(unused_assignments)] // idk why rust forces me to do this lmao
         let mut fragment_name = ffi::CString::new("").unwrap();
 
-        stage_infos.push(
+        let mut stages = Vec::new();
+        let mut vertex_buffers = Vec::with_capacity(info.vertex_buffers.len());
+        let mut vertex_attributes = Vec::new();
+
+        for (i, vb) in info.vertex_buffers.iter().enumerate() {
+            vertex_buffers.push(vk::VertexInputBindingDescription {
+                binding: i as u32,
+                stride: vb.array_stride as u32,
+                input_rate: match vb.step_mode {
+                    VertexStepMode::Vertex => vk::VertexInputRate::VERTEX,
+                    VertexStepMode::Instance => vk::VertexInputRate::INSTANCE,
+                },
+            });
+            for at in vb.attributes {
+                vertex_attributes.push(vk::VertexInputAttributeDescription {
+                    location: at.location,
+                    binding: i as u32,
+                    format: conv::map_vertex_format(at.format),
+                    offset: at.offset as u32,
+                });
+            }
+        }
+
+        let vk_vertex_input = vk::PipelineVertexInputStateCreateInfo::builder()
+            .vertex_binding_descriptions(&vertex_buffers)
+            .vertex_attribute_descriptions(&vertex_attributes)
+            .build();
+
+        stages.push(
             vk::PipelineShaderStageCreateInfo::builder()
                 .name(&vertex_name)
                 .stage(vk::ShaderStageFlags::VERTEX)
@@ -300,7 +326,7 @@ impl Device {
 
         if let Some(fragment) = &info.fragment {
             fragment_name = ffi::CString::new(fragment.entry_point).unwrap();
-            stage_infos.push(
+            stages.push(
                 vk::PipelineShaderStageCreateInfo::builder()
                     .name(&fragment_name)
                     .stage(vk::ShaderStageFlags::FRAGMENT)
@@ -309,40 +335,10 @@ impl Device {
             );
         }
 
-        let vertex_state = match &info.vertex_buffers {
-            Some(buffers) => {
-                let mut vertex_buffers = Vec::with_capacity(buffers.len());
-                let mut vertex_attributes = Vec::new();
-
-                for (i, vb) in buffers.iter().enumerate() {
-                    vertex_buffers.push(vk::VertexInputBindingDescription {
-                        binding: i as u32,
-                        stride: vb.array_stride as u32,
-                        input_rate: match vb.step_mode {
-                            VertexStepMode::Vertex => vk::VertexInputRate::VERTEX,
-                            VertexStepMode::Instance => vk::VertexInputRate::INSTANCE,
-                        },
-                    });
-                    for at in vb.attributes {
-                        vertex_attributes.push(vk::VertexInputAttributeDescription {
-                            location: at.shader_location,
-                            binding: i as u32,
-                            format: conv::map_vertex_format(at.format),
-                            offset: at.offset as u32,
-                        });
-                    }
-                }
-                vk::PipelineVertexInputStateCreateInfo::builder()
-                    .vertex_binding_descriptions(&vertex_buffers)
-                    .vertex_attribute_descriptions(&vertex_attributes)
-                    .build()
-            }
-            None => vk::PipelineVertexInputStateCreateInfo::default()
-        };
-
         let vk_input_assembly = vk::PipelineInputAssemblyStateCreateInfo::builder()
             .topology(conv::map_topology(info.primitive.topology))
-            .primitive_restart_enable(info.primitive.strip_index_format.is_some());
+            .primitive_restart_enable(info.primitive.strip_index_format.is_some())
+            .build();
 
         let vk_sample_mask = [
             info.multisample.mask as u32,
@@ -381,7 +377,7 @@ impl Device {
             vk_rasterization = vk_rasterization.push_next(&mut vk_depth_clip_state);
         }
 
-        let mut vk_depth_stencil = vk::PipelineDepthStencilStateCreateInfo::builder();
+        // let mut vk_depth_stencil = vk::PipelineDepthStencilStateCreateInfo::builder();
 
         let mut vk_attachments = Vec::with_capacity(info.targets.len());
         let mut rendering_formats = Vec::with_capacity(info.targets.len());
@@ -407,8 +403,7 @@ impl Device {
         }
 
         let vk_color_blend =
-            vk::PipelineColorBlendStateCreateInfo::builder()
-                .attachments(&vk_attachments);
+            vk::PipelineColorBlendStateCreateInfo::builder().attachments(&vk_attachments);
 
         // let noop_stencil_state = vk::StencilOpState {
         //     fail_op: vk::StencilOp::KEEP,
@@ -434,33 +429,32 @@ impl Device {
             width: 1.0,
             height: 1.0,
             min_depth: 0.0,
-            max_depth: 0.0
+            max_depth: 0.0,
         };
 
         let default_scissor = vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },
-            extent: vk::Extent2D { width: 1, height: 1 }
+            extent: vk::Extent2D {
+                width: 1,
+                height: 1,
+            },
         };
 
         let vk_viewport = vk::PipelineViewportStateCreateInfo::builder()
             .flags(vk::PipelineViewportStateCreateFlags::empty())
             .viewports(std::slice::from_ref(&default_viewport))
-            .scissors(std::slice::from_ref(&default_scissor))
-            .scissor_count(1)
-            .viewport_count(1);
+            .scissors(std::slice::from_ref(&default_scissor));
 
         let vk_dynamic_state =
-            vk::PipelineDynamicStateCreateInfo::builder()
-                .dynamic_states(&dynamic_states);
+            vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states);
 
-        let mut pipeline_rendering_info = vk::PipelineRenderingCreateInfo::builder()
-            .color_attachment_formats(&rendering_formats);
+        let mut pipeline_rendering_info =
+            vk::PipelineRenderingCreateInfo::builder().color_attachment_formats(&rendering_formats);
 
-        let mut pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
-            .push_next(&mut pipeline_rendering_info)
+        let pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
             .layout(info.layout.handle)
-            .stages(&stage_infos)
-            .vertex_input_state(&vertex_state)
+            .stages(&stages)
+            .vertex_input_state(&vk_vertex_input)
             .input_assembly_state(&vk_input_assembly)
             .rasterization_state(&vk_rasterization)
             .viewport_state(&vk_viewport)
@@ -468,7 +462,8 @@ impl Device {
             // .depth_stencil_state(&vk_depth_stencil)
             .color_blend_state(&vk_color_blend)
             .render_pass(vk::RenderPass::null())
-            .dynamic_state(&vk_dynamic_state);
+            .dynamic_state(&vk_dynamic_state)
+            .push_next(&mut pipeline_rendering_info);
 
         let vk_infos = [pipeline_info.build()];
 
@@ -476,7 +471,7 @@ impl Device {
             self.shared
                 .handle
                 .create_graphics_pipelines(vk::PipelineCache::null(), &vk_infos, None)
-                .map_err(|(p, e)| DeviceError::Other(e))?
+                .map_err(|(_p, e)| DeviceError::Other(e))?
         };
 
         let handle = pipeline_handles.pop().unwrap();

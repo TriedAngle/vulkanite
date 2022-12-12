@@ -3,8 +3,8 @@ use ash::vk;
 use naga::back::spv;
 use naga::back::spv::WriterFlags;
 use naga::front::glsl;
-use naga::front::wgsl;
 use naga::front::spv as spv_front;
+use naga::front::wgsl;
 use naga::valid::{Capabilities, ValidationFlags, Validator};
 use std::borrow::Cow;
 use std::io;
@@ -24,7 +24,6 @@ pub enum ShaderSource<'a> {
 
 pub struct ShaderModule {
     pub(crate) handle: vk::ShaderModule,
-    pub(crate) device: Arc<DeviceShared>,
 }
 
 #[derive(Error, Debug)]
@@ -68,10 +67,7 @@ impl Device {
                         .map_err(ShaderError::Device)?
                 };
 
-                return Ok(ShaderModule {
-                    handle,
-                    device: self.shared.clone(),
-                })
+                return Ok(ShaderModule { handle });
             }
         }?;
 
@@ -103,9 +99,6 @@ impl Device {
                 .map_err(ShaderError::Device)?
         };
 
-        Ok(ShaderModule {
-            handle,
-            device: self.shared.clone(),
-        })
+        Ok(ShaderModule { handle })
     }
 }

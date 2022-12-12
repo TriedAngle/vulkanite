@@ -13,6 +13,7 @@ pub(crate) struct InstanceShared {
     pub(crate) debug: Option<VkDebug>,
     pub(crate) handle: ash::Instance,
     pub(crate) extensions: Extensions,
+    pub(crate) version: Version,
     pub(crate) render: bool,
     pub(crate) layers: Layers,
 }
@@ -105,12 +106,14 @@ impl InstanceShared {
             .map(|name| name.as_ptr())
             .collect::<Vec<*const raw::c_char>>();
 
+        let version = application_version;
+
         let app_info = vk::ApplicationInfo {
             p_application_name: app_name_c
                 .as_ref()
                 .map(|s| s.as_ptr())
                 .unwrap_or(ptr::null()),
-            application_version: application_version.to_vulkan(),
+            application_version: version.to_vulkan(),
             p_engine_name: engine_name_c
                 .as_ref()
                 .map(|s| s.as_ptr())
@@ -138,6 +141,7 @@ impl InstanceShared {
             handle,
             extensions,
             debug,
+            version,
             layers,
             render,
         })

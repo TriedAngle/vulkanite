@@ -1,5 +1,6 @@
+use crate::buffer::Buffer;
 use crate::device::{Device, DeviceError, DeviceShared};
-use crate::pipeline::RasterPipeline;
+use crate::pipeline::{PipelineLayout, RasterPipeline, ShaderStages};
 use crate::queue::Queue;
 use crate::surface::Frame;
 use crate::types::{ImageTransitionLayout, RenderInfo};
@@ -7,7 +8,8 @@ use ash::vk;
 use parking_lot::Mutex;
 use std::ops::Range;
 use std::sync::Arc;
-pub use vulkanite_types::pipeline::{AccessFlags, StageFlags};
+pub use vulkanite_types::{AccessFlags, StageFlags};
+use crate::conv;
 
 const BUFFER_COUNT: u32 = 8;
 
@@ -23,9 +25,7 @@ pub(crate) struct VkCommandEncoder {
 #[derive(Debug, Clone)]
 pub struct CommandEncoder {
     pub(crate) handle: Arc<Mutex<VkCommandEncoder>>,
-    pub(crate) device: Arc<DeviceShared>,
 }
-
 
 impl CommandEncoder {
     pub fn finish(&mut self) -> CommandBuffer {
@@ -59,14 +59,17 @@ impl CommandEncoder {
         if handle.active == vk::CommandBuffer::null() {
             panic!("no active encoding");
         }
-        unsafe { handle.image_transition(
-            old.into(),
-            new.into(),
-            src_stage,
-            src_access,
-            dst_stage,
-            dst_access,
-            frame.texture.handle) }
+        unsafe {
+            handle.image_transition(
+                old.into(),
+                new.into(),
+                src_stage,
+                src_access,
+                dst_stage,
+                dst_access,
+                frame.texture.handle,
+            )
+        }
     }
 
     pub fn begin_rendering(&mut self, info: RenderInfo<'_>) {
@@ -107,13 +110,13 @@ impl CommandEncoder {
         }
     }
 
-    pub fn set_raster_pipeline(&mut self, pipeline: &RasterPipeline) {
+    pub fn bind_raster_pipeline(&mut self, pipeline: &RasterPipeline) {
         let mut handle = self.handle.lock();
         if handle.active == vk::CommandBuffer::null() {
             panic!("no active encoding");
         }
         unsafe {
-            handle.set_raster_pipeline(pipeline);
+            handle.bind_raster_pipeline(pipeline);
         }
     }
 
@@ -126,6 +129,27 @@ impl CommandEncoder {
         let instance_count = instance.len() as u32;
         unsafe {
             handle.draw(vertex.start, vertex_count, instance.start, instance_count);
+        }
+    }
+
+    pub fn bind_vertex_buffer(&mut self, index: u32, buffer: &Buffer) {
+        let mut handle = self.handle.lock();
+        if handle.active == vk::CommandBuffer::null() {
+            panic!("no active encoding");
+        }
+
+        unsafe {
+            handle.bind_vertex_buffer(index, buffer);
+        }
+    }
+
+    pub fn push_constants(&mut self, layout: &PipelineLayout, stages: ShaderStages, offset: u32, data: &[u8]) {
+        let mut handle = self.handle.lock();
+        if handle.active == vk::CommandBuffer::null() {
+            panic!("no active encoding");
+        }
+        unsafe {
+            handle.push_constants(layout.handle, conv::map_shader_stage(stages), offset, data);
         }
     }
 }
@@ -160,18 +184,18 @@ impl VkCommandEncoder {
             .new_layout(new.into())
             .image(image)
             .subresource_range(
-                        vk::ImageSubresourceRange::builder()
-                            .aspect_mask(vk::ImageAspectFlags::COLOR)
-                            .base_mip_level(0)
-                            .level_count(1)
-                            .base_array_layer(0)
-                            .layer_count(1)
-                            .build()
+                vk::ImageSubresourceRange::builder()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .base_mip_level(0)
+                    .level_count(1)
+                    .base_array_layer(0)
+                    .layer_count(1)
+                    .build(),
             );
 
         let mut src_stage_mask = vk::PipelineStageFlags::empty();
         let mut dst_stage_mask = vk::PipelineStageFlags::empty();
-        let mut dependency_flags = vk::DependencyFlags::empty();
+        let dependency_flags = vk::DependencyFlags::empty();
 
         if let Some(mask) = src_stage {
             // barrier = barrier.src_stage_mask(vk::PipelineStageFlags::from_raw(mask.bits() as vk::Flags))
@@ -246,6 +270,18 @@ impl VkCommandEncoder {
         self.device.handle.cmd_end_rendering(self.active);
     }
 
+    pub(crate) unsafe fn bind_vertex_buffer(&mut self, index: u32, buffer: &Buffer) {
+        let vk_buffers = [buffer.handle];
+        let vk_offsets = [buffer.block.lock().offset()];
+        self.device
+            .handle
+            .cmd_bind_vertex_buffers(self.active, index, &vk_buffers, &vk_offsets)
+    }
+
+    pub(crate) unsafe fn push_constants(&mut self, layout: vk::PipelineLayout, stages: vk::ShaderStageFlags, offset: u32, data: &[u8]) {
+        self.device.handle.cmd_push_constants(self.active, layout, stages, offset, data )
+    }
+
     pub(crate) unsafe fn begin_encoding(&mut self) -> Result<(), DeviceError> {
         if self.primary.is_empty() {
             self.allocate(BUFFER_COUNT, false)?
@@ -278,7 +314,7 @@ impl VkCommandEncoder {
         Ok(CommandBuffer { handle: active })
     }
 
-    pub(crate) unsafe fn set_raster_pipeline(&mut self, pipeline: &RasterPipeline) {
+    pub(crate) unsafe fn bind_raster_pipeline(&mut self, pipeline: &RasterPipeline) {
         self.device.handle.cmd_bind_pipeline(
             self.active,
             vk::PipelineBindPoint::GRAPHICS,
@@ -374,7 +410,6 @@ impl Device {
 
         Ok(CommandEncoder {
             handle: Arc::new(Mutex::new(vk_command_encoder)),
-            device,
         })
     }
 }
