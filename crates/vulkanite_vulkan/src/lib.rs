@@ -26,7 +26,7 @@ pub mod vn {
     pub use crate::instance::{Instance, InstanceCreateInfo, InstanceCreationError};
     pub use crate::pipeline::*;
     pub use crate::queue::{Queue, QueueCreateInfo, QueueFamily};
-    pub use crate::shader::*;
+    pub use crate::shader::{ShaderKind, ShaderSource};
     pub use crate::surface::{Surface, SurfaceConfig, SurfaceError, Swapchain};
     pub use crate::sync::*;
     pub use crate::types::*;

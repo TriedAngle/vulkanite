@@ -12,23 +12,9 @@ use winit::window::WindowBuilder;
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 3],
+    normals: [f32; 3],
     color: [f32; 3],
 }
-
-const VERTICES: &[Vertex] = &[
-    Vertex {
-        position: [0.5, 0.5, 0.0],
-        color: [1.0, 0.0, 0.0],
-    },
-    Vertex {
-        position: [-0.5, 0.5, 0.0],
-        color: [0.0, 1.0, 0.0],
-    },
-    Vertex {
-        position: [0.0, -0.5, 0.0],
-        color: [0.0, 0.0, 1.0],
-    },
-];
 
 impl Vertex {
     pub fn desc<'a>() -> vn::VertexBufferLayout<'a> {
@@ -119,20 +105,21 @@ fn main() {
 
     surface.configure(&device, &surface_config).unwrap();
 
+    let mut vertex_spv = io::Cursor::new(&include_bytes!("../shader/vert.spv")[..]);
+    let mut fragment_spv = io::Cursor::new(&include_bytes!("../shader/frag.spv")[..]);
+
     let shader_vertex = device
-        .create_shader_module(vn::ShaderSource::Glsl {
-            content: include_str!("../shader/triangle.vert").into(),
-            kind: vn::ShaderKind::Vertex,
-            entry: "main",
-        })
+        .create_shader_module(
+            vn::ShaderSource::SpirV(&mut vertex_spv),
+            vn::ShaderCompileInfo::default(),
+        )
         .unwrap();
 
     let shader_fragment = device
-        .create_shader_module(vn::ShaderSource::Glsl {
-            content: include_str!("../shader/triangle.frag").into(),
-            kind: vn::ShaderKind::Fragment,
-            entry: "main",
-        })
+        .create_shader_module(
+            vn::ShaderSource::SpirV(&mut fragment_spv),
+            vn::ShaderCompileInfo::default(),
+        )
         .unwrap();
 
     let vertex_buffer = device
@@ -171,7 +158,7 @@ fn main() {
                 topology: vn::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: vn::FrontFace::CounterClock,
-                cull_mode: Some(vn::CullModeFlags::NONE),
+                cull_mode: None,
                 polygon_mode: vn::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,

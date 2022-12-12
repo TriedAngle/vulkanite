@@ -149,15 +149,6 @@ impl Adapter {
                 })
         };
 
-        let mem_properties = unsafe {
-            self.instance
-                .handle
-                .get_physical_device_memory_properties(self.handle)
-        };
-
-        let memory_types =
-            &mem_properties.memory_types[..mem_properties.memory_type_count as usize];
-
         let allocator = {
             let config = gpu_alloc::Config::i_am_prototyping();
             let properties = unsafe {

@@ -11,7 +11,9 @@ ash-window = "0.12.0"
 gpu-alloc = "0.5.0"
 gpu-alloc-ash = "0.5.0"
 raw-window-handle = "0.5.0"
-naga = {version = "0.10.0", features = ["glsl-in", "wgsl-in", "spv-in", "spv-out"]}
+# naga sadly doesn't support enough glsl features so we do shaderc aswell :)
+naga = {version = "0.10.0", features = ["wgsl-in", "spv-in", "spv-out"]}
+shaderc = "0.8.1"
 thiserror = "1.0.37"
 tracing = "0.1.37"
 

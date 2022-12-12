@@ -69,25 +69,27 @@ impl InstanceShared {
         // some defaults
         extensions.vk_khr_get_physical_device_properties2 = true;
 
-        if render && info.window.is_none() {
+        if render {
             extensions.vk_khr_surface = true;
-            if cfg!(all(
-                unix,
-                not(target_os = "android"),
-                not(target_os = "macos")
-            )) {
-                extensions.vk_khr_xlib_surface = true;
-                extensions.vk_khr_xcb_surface = true;
-                extensions.vk_khr_wayland_surface = true;
-            }
-            if cfg!(target_os = "android") {
-                extensions.vk_khr_android_surface = true;
-            }
-            if cfg!(target_os = "windows") {
-                extensions.vk_khr_win32_surface = true;
-            }
-            if cfg!(target_os = "macos") {
-                extensions.vk_ext_metal_surface = true;
+            if window.is_none() {
+                if cfg!(all(
+                    unix,
+                    not(target_os = "android"),
+                    not(target_os = "macos")
+                )) {
+                    extensions.vk_khr_xlib_surface = true;
+                    extensions.vk_khr_xcb_surface = true;
+                    extensions.vk_khr_wayland_surface = true;
+                }
+                if cfg!(target_os = "android") {
+                    extensions.vk_khr_android_surface = true;
+                }
+                if cfg!(target_os = "windows") {
+                    extensions.vk_khr_win32_surface = true;
+                }
+                if cfg!(target_os = "macos") {
+                    extensions.vk_ext_metal_surface = true;
+                }
             }
         }
 
