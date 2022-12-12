@@ -1,12 +1,12 @@
 use std::{io, mem};
 use vulkanite_vulkan::vn;
 
+use nalgebra_glm as na;
+use tracing::info;
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, Event, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
-use nalgebra_glm as na;
-use tracing::info;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -78,6 +78,7 @@ fn main() {
         engine_name: Some("Acute".to_string()),
         vulkan_version: vn::Version::V1_3,
         render: true,
+        window: Some(&window),
         ..vn::InstanceCreateInfo::default()
     })
     .unwrap();
@@ -150,7 +151,7 @@ fn main() {
             bind_group_layouts: &[],
             push_constant_ranges: &[vn::PushConstantRange {
                 stages: vn::ShaderStages::VERTEX,
-                range: 0..mem::size_of::<MeshPushConstants>() as u32
+                range: 0..mem::size_of::<MeshPushConstants>() as u32,
             }],
         })
         .unwrap();
@@ -262,8 +263,17 @@ fn main() {
 
             let cam_pos = na::vec3(0.0, 0.0, -2.0);
             let view = na::translate(&na::Mat4::identity(), &cam_pos);
-            let mut projection = na::perspective(70.0 * std::f32::consts::PI / 180.0, 1700.0 / 900.0, 0.1, 200.0);
-            let model = na::rotate(&na::Mat4::identity(), frame_count as f32 * 0.4 * std::f32::consts::PI / 180.0, &na::vec3(0.0, 1.0, 0.0));
+            let mut projection = na::perspective(
+                70.0 * std::f32::consts::PI / 180.0,
+                1700.0 / 900.0,
+                0.1,
+                200.0,
+            );
+            let model = na::rotate(
+                &na::Mat4::identity(),
+                frame_count as f32 * 0.4 * std::f32::consts::PI / 180.0,
+                &na::vec3(0.0, 1.0, 0.0),
+            );
             let matrix = projection * view * model;
 
             let push_constant = MeshPushConstants {
@@ -271,7 +281,12 @@ fn main() {
                 matrix: matrix.data.0,
             };
 
-            encoder.push_constants(&pipeline_layout, vn::ShaderStages::VERTEX, 0, bytemuck::cast_slice(&[push_constant]));
+            encoder.push_constants(
+                &pipeline_layout,
+                vn::ShaderStages::VERTEX,
+                0,
+                bytemuck::cast_slice(&[push_constant]),
+            );
             encoder.draw(0..VERTICES.len() as u32, 0..1);
 
             encoder.end_rendering();
@@ -304,10 +319,7 @@ fn main() {
         Event::MainEventsCleared => {
             window.request_redraw();
         }
-        Event::LoopDestroyed => {
-
-        }
+        Event::LoopDestroyed => {}
         _ => {}
     });
-
 }

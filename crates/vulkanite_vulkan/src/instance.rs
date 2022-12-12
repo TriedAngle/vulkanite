@@ -2,6 +2,9 @@ use crate::debug::{VkDebug, VkDebugCallback};
 use crate::types::{Extensions, Layers};
 use crate::utils::Version;
 use ash::vk;
+use raw_window_handle::{
+    HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle,
+};
 use std::fmt::{Debug, Display, Formatter};
 use std::os::raw;
 use std::sync::Arc;
@@ -48,6 +51,7 @@ impl InstanceShared {
             mut extensions,
             vulkan_version,
             render,
+            window,
             debug,
         } = info;
 
@@ -65,7 +69,7 @@ impl InstanceShared {
         // some defaults
         extensions.vk_khr_get_physical_device_properties2 = true;
 
-        if render {
+        if render && info.window.is_none() {
             extensions.vk_khr_surface = true;
             if cfg!(all(
                 unix,
@@ -96,15 +100,25 @@ impl InstanceShared {
             .map(|layer| layer.as_ptr())
             .collect::<Vec<*const raw::c_char>>();
 
+        let window_extensions = if let Some(handle) = window {
+            ash_window::enumerate_required_extensions(handle.raw_display_handle()).unwrap()
+        } else {
+            &[]
+        };
+
         let extension_names = Vec::<ffi::CString>::from(extensions);
 
         info!("Instance Layers: {:?}", layer_names);
         info!("Instance Extensions: {:?}", extension_names);
 
-        let extension_pointers = extension_names
+        let mut extension_pointers = extension_names
             .iter()
             .map(|name| name.as_ptr())
             .collect::<Vec<*const raw::c_char>>();
+
+        for extension in window_extensions {
+            extension_pointers.push(*extension)
+        }
 
         let version = application_version;
 
@@ -156,8 +170,8 @@ impl InstanceShared {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct InstanceCreateInfo {
+#[derive(Clone)]
+pub struct InstanceCreateInfo<'a> {
     pub application_name: Option<String>,
     pub application_version: Version,
     pub engine_name: Option<String>,
@@ -166,10 +180,11 @@ pub struct InstanceCreateInfo {
     pub extensions: Extensions,
     pub vulkan_version: Version,
     pub render: bool,
+    pub window: Option<&'a dyn HasRawDisplayHandle>,
     pub debug: bool,
 }
 
-impl Default for InstanceCreateInfo {
+impl Default for InstanceCreateInfo<'_> {
     fn default() -> Self {
         Self {
             application_name: None,
@@ -180,6 +195,7 @@ impl Default for InstanceCreateInfo {
             extensions: Extensions::none(),
             vulkan_version: Version::V1_3,
             render: true,
+            window: None,
             debug: true,
         }
     }

@@ -1,4 +1,5 @@
 use crate::buffer::Buffer;
+use crate::conv;
 use crate::device::{Device, DeviceError, DeviceShared};
 use crate::pipeline::{PipelineLayout, RasterPipeline, ShaderStages};
 use crate::queue::Queue;
@@ -9,7 +10,6 @@ use parking_lot::Mutex;
 use std::ops::Range;
 use std::sync::Arc;
 pub use vulkanite_types::{AccessFlags, StageFlags};
-use crate::conv;
 
 const BUFFER_COUNT: u32 = 8;
 
@@ -143,7 +143,13 @@ impl CommandEncoder {
         }
     }
 
-    pub fn push_constants(&mut self, layout: &PipelineLayout, stages: ShaderStages, offset: u32, data: &[u8]) {
+    pub fn push_constants(
+        &mut self,
+        layout: &PipelineLayout,
+        stages: ShaderStages,
+        offset: u32,
+        data: &[u8],
+    ) {
         let mut handle = self.handle.lock();
         if handle.active == vk::CommandBuffer::null() {
             panic!("no active encoding");
@@ -278,8 +284,16 @@ impl VkCommandEncoder {
             .cmd_bind_vertex_buffers(self.active, index, &vk_buffers, &vk_offsets)
     }
 
-    pub(crate) unsafe fn push_constants(&mut self, layout: vk::PipelineLayout, stages: vk::ShaderStageFlags, offset: u32, data: &[u8]) {
-        self.device.handle.cmd_push_constants(self.active, layout, stages, offset, data )
+    pub(crate) unsafe fn push_constants(
+        &mut self,
+        layout: vk::PipelineLayout,
+        stages: vk::ShaderStageFlags,
+        offset: u32,
+        data: &[u8],
+    ) {
+        self.device
+            .handle
+            .cmd_push_constants(self.active, layout, stages, offset, data)
     }
 
     pub(crate) unsafe fn begin_encoding(&mut self) -> Result<(), DeviceError> {
