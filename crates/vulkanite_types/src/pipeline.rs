@@ -1,3 +1,6 @@
+use crate::{BufferAddress, TextureFormat};
+use std::ops::Range;
+
 bitflags::bitflags! {
     /// Color write mask. Disabled color channels will not be written to.
     ///
@@ -74,6 +77,97 @@ bitflags::bitflags! {
     }
 }
 
+bitflags::bitflags! {
+    #[repr(transparent)]
+    pub struct ShaderStages: u32 {
+        const NONE = 0;
+        const VERTEX = 1 << 0;
+        const FRAGMENT = 1 << 1;
+        const COMPUTE = 1 << 2;
+        const VERTEX_FRAGMENT = Self::VERTEX.bits | Self::FRAGMENT.bits;
+    }
+
+    #[repr(transparent)]
+    pub struct PipelineFlags: u32 {
+        const BLEND_CONSTANT = 1 << 0;
+        const STENCIL_REFERENCE = 1 << 1;
+        const WRITES_DEPTH_STENCIL = 1 << 2;
+    }
+
+    /// Pipeline layout creation flags.
+    pub struct PipelineLayoutFlags: u32 {
+        /// Include support for base vertex/instance drawing.
+        const BASE_VERTEX_INSTANCE = 1 << 0;
+        /// Include support for num work groups builtin.
+        const NUM_WORK_GROUPS = 1 << 1;
+    }
+
+    #[repr(transparent)]
+    pub struct CullModeFlags: u32 {
+        const NONE = 0;
+        const FRONT = 1 << 0;
+        const BACK = 1 << 1;
+        const FRONT_BACK = 1 << 2;
+    }
+}
+
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+pub enum PolygonMode {
+    Fill,
+    Line,
+    Point,
+    FillRectangleNV,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+pub enum PrimitiveTopology {
+    PointList = 0,
+    LineList = 1,
+    LineStrip = 2,
+    TriangleList = 3,
+    TriangleStrip = 4,
+    TriangleFan = 5,
+    LineListWithAdjacency = 6,
+    LineStripWithAdjacency = 7,
+    TriangleListWithAdjacency = 8,
+    TriangleStripWithAdjacency = 9,
+    PatchList = 10,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+pub enum FrontFace {
+    CounterClock = 0,
+    Clock = 1,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+pub enum IndexFormat {
+    Uint16 = 0,
+    Uint32 = 1,
+}
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+pub enum DepthCompareOperator {
+    Never = 0,
+    Less = 1,
+    Equal = 2,
+    LessEqual = 3,
+    Greater = 4,
+    NotEqual = 5,
+    GreaterEqual = 6,
+    Always = 7,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+pub enum VertexStepMode {
+    Vertex = 0,
+    Instance = 1,
+}
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub enum BlendFactor {
@@ -139,7 +233,6 @@ pub struct BlendComponent {
 }
 
 impl BlendComponent {
-    /// Default blending state that replaces destination with the source.
     pub const REPLACE: Self = Self {
         src_factor: BlendFactor::One,
         dst_factor: BlendFactor::Zero,
@@ -153,8 +246,6 @@ impl BlendComponent {
         operation: BlendOperation::Add,
     };
 
-    /// Returns true if the state relies on the constant color, which is
-    /// set independently on a render command encoder.
     pub fn uses_constant(&self) -> bool {
         match (self.src_factor, self.dst_factor) {
             (BlendFactor::Constant, _)
@@ -169,20 +260,16 @@ impl BlendComponent {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct BlendState {
-    /// Color equation.
     pub color: BlendComponent,
-    /// Alpha equation.
     pub alpha: BlendComponent,
 }
 
 impl BlendState {
-    /// Blend mode that does no color blending, just overwrites the output with the contents of the shader.
     pub const REPLACE: Self = Self {
         color: BlendComponent::REPLACE,
         alpha: BlendComponent::REPLACE,
     };
 
-    /// Blend mode that does standard alpha blending with non-premultiplied alpha.
     pub const ALPHA_BLENDING: Self = Self {
         color: BlendComponent {
             src_factor: BlendFactor::SrcAlpha,
@@ -192,11 +279,93 @@ impl BlendState {
         alpha: BlendComponent::OVER,
     };
 
-    /// Blend mode that does standard alpha blending with premultiplied alpha.
     pub const PREMULTIPLIED_ALPHA_BLENDING: Self = Self {
         color: BlendComponent::OVER,
         alpha: BlendComponent::OVER,
     };
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct PushConstantRange {
+    pub stages: ShaderStages,
+    pub range: Range<u32>,
+}
+
+pub struct PrimitiveState {
+    pub topology: PrimitiveTopology,
+    pub strip_index_format: Option<IndexFormat>,
+    pub front_face: FrontFace,
+    pub cull_mode: Option<CullModeFlags>,
+    pub polygon_mode: PolygonMode,
+    pub unclipped_depth: bool,
+    pub conservative: bool,
+    pub line_width: f32,
+}
+
+pub struct DepthStencilState {
+    pub format: TextureFormat,
+    pub write: bool,
+    pub depth_compare: DepthCompareOperator,
+    pub bias: DepthBiasState,
+    pub read_mask: u32,
+    pub write_mask: u32,
+}
+
+pub struct DepthBiasState {
+    pub constant: f32,
+    pub slope: f32,
+    pub clamp: f32,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[repr(i32)]
+pub enum LoadOp<T> {
+    Clear(T),
+    Load,
+    DontCare,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[repr(i32)]
+pub enum StoreOp {
+    Store,
+    DontCare,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Operations<T> {
+    pub load: LoadOp<T>,
+    pub store: StoreOp,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct MultisampleState {
+    pub count: u32,
+    pub mask: u64,
+    pub alpha_to_coverage_enabled: bool,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ColorTargetState {
+    pub format: TextureFormat,
+    pub blend: Option<BlendState>,
+    pub write_mask: ColorWrites,
+}
+
+pub type ShaderLocation = u32;
+
+pub struct VertexAttribute {
+    pub format: VertexFormat,
+    pub offset: BufferAddress,
+    pub location: ShaderLocation,
+}
+
+pub struct VertexBufferLayout<'a> {
+    pub array_stride: BufferAddress,
+    pub step_mode: VertexStepMode,
+    pub attributes: &'a [VertexAttribute],
 }
 
 #[repr(C)]

@@ -1,12 +1,12 @@
 use crate::device::{Device, DeviceShared};
 use crate::instance::{Instance, InstanceShared};
-use crate::types::{Texture, TextureFormat};
 use tracing::{info, warn};
 
 use crate::adapter::Adapter;
 use crate::conv;
 use crate::queue::Queue;
 use crate::sync::{BinarySemaphore, Fence};
+use crate::texture::{Texture, TextureView};
 use ash::{extensions::khr, vk};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::sync::Arc;
@@ -31,11 +31,18 @@ pub struct Swapchain {
     pub(crate) image_views: Vec<vk::ImageView>,
 }
 
+#[derive(Debug)]
 pub struct Frame {
     pub(crate) texture: Texture,
-    pub(crate) view: vk::ImageView,
+    pub(crate) view: TextureView,
     pub(crate) suboptimal: bool,
     pub(crate) index: u32,
+}
+
+impl Frame {
+    pub fn view(&self) -> &TextureView {
+        &self.view
+    }
 }
 
 impl Surface {
@@ -99,8 +106,11 @@ impl Surface {
             texture: Texture {
                 handle: sc.images[index as usize],
                 usage: sc.config.usage,
+                block: None,
             },
-            view: sc.image_views[index as usize],
+            view: TextureView {
+                handle: sc.image_views[index as usize],
+            },
             suboptimal,
             index,
         };
@@ -110,7 +120,7 @@ impl Surface {
     pub fn formats(
         &self,
         adapter: &Adapter,
-    ) -> Result<impl Iterator<Item = TextureFormat>, SurfaceError> {
+    ) -> Result<impl Iterator<Item = vt::TextureFormat>, SurfaceError> {
         let formats = unsafe {
             self.loader
                 .get_physical_device_surface_formats(adapter.handle, self.handle)
@@ -118,7 +128,7 @@ impl Surface {
         }?;
         Ok(formats
             .into_iter()
-            .map(|format| TextureFormat::from(format.format.as_raw())))
+            .map(|format| vt::TextureFormat::from(format.format.as_raw())))
     }
 
     pub fn capabilities(
@@ -258,7 +268,7 @@ impl Device {
             .flags(vk::SwapchainCreateFlagsKHR::empty())
             .surface(surface.handle)
             .min_image_count(3)
-            .image_format(config.format.into())
+            .image_format(conv::map_texture_format(config.format))
             .image_color_space(color_space)
             .image_extent(surface_resolution)
             .image_usage(conv::map_texture_usages(config.usage))
@@ -289,7 +299,7 @@ impl Device {
             .map(|&image| {
                 let create_info = vk::ImageViewCreateInfo::builder()
                     .view_type(vk::ImageViewType::TYPE_2D)
-                    .format(config.format.into())
+                    .format(conv::map_texture_format(config.format))
                     .components(vk::ComponentMapping {
                         r: vk::ComponentSwizzle::R,
                         g: vk::ComponentSwizzle::G,
@@ -346,7 +356,7 @@ impl Instance {
 #[derive(Debug, Copy, Clone)]
 pub struct SurfaceConfig {
     pub usage: vt::TextureUsages,
-    pub format: TextureFormat,
+    pub format: vt::TextureFormat,
     pub width: u32,
     pub height: u32,
     pub mode: vt::PresentMode,

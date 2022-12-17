@@ -61,7 +61,6 @@ impl Adapter {
 
         let layer_names = Vec::<ffi::CString>::from(instance.layers());
 
-        println!("extension_names: {:?}", extension_names);
         let extension_pointers = extension_names
             .iter()
             .map(|name| name.as_ptr())

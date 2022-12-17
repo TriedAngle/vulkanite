@@ -9,12 +9,14 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 3],
-    normals: [f32; 3],
+    normal: [f32; 3],
     color: [f32; 3],
 }
+
+const DEPTH_FORMAT: vn::TextureFormat = vn::TextureFormat::D32Sfloat;
 
 impl Vertex {
     pub fn desc<'a>() -> vn::VertexBufferLayout<'a> {
@@ -32,6 +34,11 @@ impl Vertex {
                     offset: mem::size_of::<[f32; 3]>() as vn::BufferAddress,
                     location: 1,
                 },
+                vn::VertexAttribute {
+                    format: vn::VertexFormat::Float32x3,
+                    offset: (mem::size_of::<[f32; 3]>() * 2) as vn::BufferAddress,
+                    location: 2,
+                },
             ],
         }
     }
@@ -40,7 +47,6 @@ impl Vertex {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct MeshPushConstants {
-    data: [f32; 4],
     matrix: [[f32; 4]; 4],
 }
 
@@ -53,11 +59,43 @@ fn main() {
 
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
-        .with_title("Triangle Test")
+        .with_title("Depth + Model Test")
         .with_inner_size(PhysicalSize::new(1080, 720))
         .with_resizable(true)
         .build(&event_loop)
         .unwrap();
+
+    let mut options = tobj::LoadOptions::default();
+    options.triangulate = true;
+
+    let (models, materials) = tobj::load_obj("examples/vulkan/src/resource/tree.obj", &options)
+        .expect("Failed to OBJ load file");
+
+    let model = models.first().unwrap();
+    let mesh = &model.mesh;
+
+    let mut vertices = mesh
+        .indices
+        .iter()
+        .map(|_| Vertex::default())
+        .collect::<Vec<_>>();
+
+    for idx in 0..mesh.indices.len() {
+        let indices_at_idx = mesh.indices[idx] as usize;
+        vertices[idx].position[0] = mesh.positions[indices_at_idx * 3 + 0];
+        vertices[idx].position[1] = mesh.positions[indices_at_idx * 3 + 1];
+        vertices[idx].position[2] = mesh.positions[indices_at_idx * 3 + 2];
+
+        let indices_at_idx_normal = mesh.normal_indices[idx] as usize;
+
+        vertices[idx].normal[0] = mesh.normals[indices_at_idx_normal * 3 + 0];
+        vertices[idx].normal[1] = mesh.normals[indices_at_idx_normal * 3 + 1];
+        vertices[idx].normal[2] = mesh.normals[indices_at_idx_normal * 3 + 2];
+
+        vertices[idx].color[0] = mesh.normals[indices_at_idx_normal * 3 + 0];
+        vertices[idx].color[1] = mesh.normals[indices_at_idx_normal * 3 + 1];
+        vertices[idx].color[2] = mesh.normals[indices_at_idx_normal * 3 + 2];
+    }
 
     let instance = vn::Instance::new(vn::InstanceCreateInfo {
         application_name: Some("Testing".to_string()),
@@ -105,30 +143,62 @@ fn main() {
 
     surface.configure(&device, &surface_config).unwrap();
 
-    let mut vertex_spv = io::Cursor::new(&include_bytes!("../shader/vert.spv")[..]);
-    let mut fragment_spv = io::Cursor::new(&include_bytes!("../shader/frag.spv")[..]);
-
     let shader_vertex = device
-        .create_shader_module(
-            vn::ShaderSource::SpirV(&mut vertex_spv),
-            vn::ShaderCompileInfo::default(),
-        )
+        .create_shader_module(vn::ShaderSource::Glsl {
+            content: include_str!("../shader/mesh.vert").into(),
+            kind: vn::ShaderKind::Vertex,
+            entry: "main",
+        })
         .unwrap();
 
     let shader_fragment = device
-        .create_shader_module(
-            vn::ShaderSource::SpirV(&mut fragment_spv),
-            vn::ShaderCompileInfo::default(),
-        )
+        .create_shader_module(vn::ShaderSource::Glsl {
+            content: include_str!("../shader/mesh.frag").into(),
+            kind: vn::ShaderKind::Fragment,
+            entry: "main",
+        })
         .unwrap();
 
     let vertex_buffer = device
         .create_buffer_init(&vn::BufferInitInfo {
             label: None,
-            contents: bytemuck::cast_slice(VERTICES),
+            contents: bytemuck::cast_slice(&vertices),
             usage: vn::BufferUsages::VERTEX | vn::BufferUsages::MAP_WRITE,
-            sharing: vn::BufferSharing::Exclusive,
+            sharing: vn::SharingMode::Exclusive,
         })
+        .unwrap();
+
+    let mut depth_texture = device
+        .create_texture(&vn::TextureInfo {
+            dimension: vn::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            size: vn::Extent3D {
+                width: surface_config.width,
+                height: surface_config.height,
+                depth: 1,
+            },
+            mip_levels: 1,
+            samples: 1,
+            usage: vn::TextureUsages::DEPTH_STENCIL_ATTACHMENT,
+            sharing: vn::SharingMode::Exclusive,
+        })
+        .unwrap();
+
+    let mut depth_view = device
+        .create_texture_view(
+            &vn::TextureViewInfo {
+                dimension: vn::TextureViewDimension::D2,
+                format: DEPTH_FORMAT,
+                range: vn::ImageSubresourceRange {
+                    aspects: vn::TextureAspects::DEPTH,
+                    base_mip_level: 0,
+                    mip_level_count: 1,
+                    base_array_layer: 0,
+                    array_layer_count: 1,
+                },
+            },
+            &depth_texture,
+        )
         .unwrap();
 
     let pipeline_layout = device
@@ -157,13 +227,25 @@ fn main() {
             primitive: vn::PrimitiveState {
                 topology: vn::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
-                front_face: vn::FrontFace::CounterClock,
-                cull_mode: None,
+                front_face: vn::FrontFace::Clock,
+                cull_mode: Some(vn::CullModeFlags::BACK),
                 polygon_mode: vn::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,
                 line_width: 1.0,
             },
+            depth_stencil: Some(vn::DepthStencilState {
+                format: DEPTH_FORMAT,
+                write: true,
+                depth_compare: vn::DepthCompareOperator::Less,
+                bias: vn::DepthBiasState {
+                    constant: 0.0,
+                    slope: 0.0,
+                    clamp: 0.0,
+                },
+                read_mask: 0,
+                write_mask: 0,
+            }),
             multisample: vn::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -201,6 +283,39 @@ fn main() {
                     surface_config.height = new_size.height;
                     surface.configure(&device, &surface_config).unwrap();
                 }
+
+                depth_texture = device
+                    .create_texture(&vn::TextureInfo {
+                        dimension: vn::TextureDimension::D2,
+                        format: DEPTH_FORMAT,
+                        size: vn::Extent3D {
+                            width: surface_config.width,
+                            height: surface_config.height,
+                            depth: 1,
+                        },
+                        mip_levels: 1,
+                        samples: 1,
+                        usage: vn::TextureUsages::DEPTH_STENCIL_ATTACHMENT,
+                        sharing: vn::SharingMode::Exclusive,
+                    })
+                    .unwrap();
+
+                depth_view = device
+                    .create_texture_view(
+                        &vn::TextureViewInfo {
+                            dimension: vn::TextureViewDimension::D2,
+                            format: DEPTH_FORMAT,
+                            range: vn::ImageSubresourceRange {
+                                aspects: vn::TextureAspects::DEPTH,
+                                base_mip_level: 0,
+                                mip_level_count: 1,
+                                base_array_layer: 0,
+                                array_layer_count: 1,
+                            },
+                        },
+                        &depth_texture,
+                    )
+                    .unwrap();
             }
             WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                 if new_inner_size.width > 0 && new_inner_size.height > 0 {
@@ -234,12 +349,26 @@ fn main() {
             );
 
             encoder.begin_rendering(vn::RenderInfo {
-                color_attachments: &[vn::RenderAttachmentInfo {
-                    load_op: vn::LoadOp::Clear,
-                    store_op: vn::StoreOp::Store,
-                    clear: vn::ClearOp::Color(vn::Color::norm(0.1, 0.2, 0.3, 1.0)),
+                color_attachments: &[vn::RenderAttachment {
+                    view: frame.view(),
+                    ops: vn::Operations {
+                        load: vn::LoadOp::Clear(vn::Color {
+                            r: 0.1,
+                            g: 0.2,
+                            b: 0.3,
+                            a: 1.0,
+                        }),
+                        store: vn::StoreOp::Store,
+                    },
                 }],
-                frame: &frame,
+                depth_attachment: Some(vn::DepthAttachment {
+                    view: &depth_view,
+                    ops: vn::Operations {
+                        load: vn::LoadOp::Clear(1.0),
+                        store: vn::StoreOp::Store,
+                    },
+                }),
+                stencil_attachment: None,
                 offset: (0, 0),
                 area: (surface_config.width, surface_config.height),
             });
@@ -247,7 +376,7 @@ fn main() {
             encoder.bind_raster_pipeline(&pipeline);
             encoder.bind_vertex_buffer(0, &vertex_buffer);
 
-            let cam_pos = na::vec3(0.0, 0.0, -2.0);
+            let cam_pos = na::vec3(0.0, -6.0, -27.0);
             let view = na::translate(&na::Mat4::identity(), &cam_pos);
             let mut projection = na::perspective(
                 70.0 * std::f32::consts::PI / 180.0,
@@ -263,7 +392,6 @@ fn main() {
             let matrix = projection * view * model;
 
             let push_constant = MeshPushConstants {
-                data: [0.0, 0.0, 0.0, 0.0],
                 matrix: matrix.data.0,
             };
 
@@ -273,7 +401,7 @@ fn main() {
                 0,
                 bytemuck::cast_slice(&[push_constant]),
             );
-            encoder.draw(0..VERTICES.len() as u32, 0..1);
+            encoder.draw(0..vertices.len() as u32, 0..1);
 
             encoder.end_rendering();
 

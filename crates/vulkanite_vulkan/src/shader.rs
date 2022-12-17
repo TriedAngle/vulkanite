@@ -1,13 +1,11 @@
-use crate::device::{Device, DeviceError, DeviceShared};
+use crate::device::{Device, DeviceError};
 use ash::vk;
 use naga::back::spv;
 use naga::back::spv::WriterFlags;
 use naga::front::wgsl;
 use naga::valid::{Capabilities, ValidationFlags, Validator};
-use shaderc::{CompileOptions, SpirvVersion};
 use std::borrow::Cow;
 use std::io;
-use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Debug, Default, Copy, Clone)]

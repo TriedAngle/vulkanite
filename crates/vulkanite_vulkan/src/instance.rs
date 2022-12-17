@@ -2,9 +2,7 @@ use crate::debug::{VkDebug, VkDebugCallback};
 use crate::types::{Extensions, Layers};
 use crate::utils::Version;
 use ash::vk;
-use raw_window_handle::{
-    HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle,
-};
+use raw_window_handle::HasRawDisplayHandle;
 use std::fmt::{Debug, Display, Formatter};
 use std::os::raw;
 use std::sync::Arc;

@@ -1,124 +1,16 @@
 use crate::conv;
 use crate::device::{Device, DeviceError, DeviceShared};
 use crate::shader::ShaderModule;
-use crate::types::TextureFormat;
 use ash::vk;
 use std::collections::BTreeMap;
 use std::ffi;
 use std::num::NonZeroU32;
-use std::ops::Range;
 use std::sync::Arc;
 pub use vulkanite_types as vt;
-
-bitflags::bitflags! {
-    #[repr(transparent)]
-    pub struct ShaderStages: u32 {
-        /// Binding is not visible from any shader stage.
-        const NONE = 0;
-        /// Binding is visible from the vertex shader of a render pipeline.
-        const VERTEX = 1 << 0;
-        /// Binding is visible from the fragment shader of a render pipeline.
-        const FRAGMENT = 1 << 1;
-        /// Binding is visible from the compute shader of a compute pipeline.
-        const COMPUTE = 1 << 2;
-        /// Binding is visible from the vertex and fragment shaders of a render pipeline.
-        const VERTEX_FRAGMENT = Self::VERTEX.bits | Self::FRAGMENT.bits;
-    }
-
-    #[repr(transparent)]
-    pub struct PipelineFlags: u32 {
-        const BLEND_CONSTANT = 1 << 0;
-        const STENCIL_REFERENCE = 1 << 1;
-        const WRITES_DEPTH_STENCIL = 1 << 2;
-    }
-
-    /// Pipeline layout creation flags.
-    pub struct PipelineLayoutFlags: u32 {
-        /// Include support for base vertex/instance drawing.
-        const BASE_VERTEX_INSTANCE = 1 << 0;
-        /// Include support for num work groups builtin.
-        const NUM_WORK_GROUPS = 1 << 1;
-    }
-
-    #[repr(transparent)]
-    pub struct CullModeFlags: u32 {
-        const NONE = 0;
-        const FRONT = 1 << 0;
-        const BACK = 1 << 1;
-        const FRONT_BACK = 1 << 2;
-    }
-}
-
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub enum PolygonMode {
-    Fill,
-    Line,
-    Point,
-    FillRectangleNV,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub enum PrimitiveTopology {
-    PointList = 0,
-    LineList = 1,
-    LineStrip = 2,
-    TriangleList = 3,
-    TriangleStrip = 4,
-    TriangleFan = 5,
-    LineListWithAdjacency = 6,
-    LineStripWithAdjacency = 7,
-    TriangleListWithAdjacency = 8,
-    TriangleStripWithAdjacency = 9,
-    PatchList = 10,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub enum FrontFace {
-    CounterClock = 0,
-    Clock = 1,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub enum IndexFormat {
-    Uint16 = 0,
-    Uint32 = 1,
-}
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub enum DepthCompareOperator {
-    Never = 0,
-    Less = 1,
-    Equal = 2,
-    LessEqual = 3,
-    Greater = 4,
-    NotEqual = 5,
-    GreaterEqual = 6,
-    Always = 7,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub enum VertexStepMode {
-    Vertex = 0,
-    Instance = 1,
-}
 
 pub struct PipelineLayout {
     pub(crate) handle: vk::PipelineLayout,
     pub(crate) binding_arrays: naga::back::spv::BindingMap,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct PushConstantRange {
-    /// Stage push constant range is visible from. Each stage can only be served by at most one range.
-    /// One range can serve multiple stages however.
-    pub stages: ShaderStages,
-    /// Range in push constant memory to use for the stage. Must be less than [`Limits::max_push_constant_size`].
-    /// Start and end must be aligned to the 4s.
-    pub range: Range<u32>,
 }
 
 #[derive(Debug)]
@@ -127,9 +19,9 @@ pub struct BindGroupLayout {
 }
 
 pub struct PipelineLayoutInfo<'a> {
-    pub flags: PipelineLayoutFlags,
+    pub flags: vt::PipelineLayoutFlags,
     pub bind_group_layouts: &'a [&'a BindGroupLayout],
-    pub push_constant_ranges: &'a [PushConstantRange],
+    pub push_constant_ranges: &'a [vt::PushConstantRange],
 }
 
 pub struct BindGroupLayoutDescriptor<'a> {
@@ -138,7 +30,7 @@ pub struct BindGroupLayoutDescriptor<'a> {
 
 pub struct BindGroupLayoutEntry {
     binding: u32,
-    visibility: ShaderStages,
+    visibility: vt::ShaderStages,
     ty: BindingType,
     count: Option<NonZeroU32>,
 }
@@ -154,62 +46,15 @@ pub struct FragmentState<'a> {
     module: &'a ShaderModule,
 }
 
-pub struct PrimitiveState {
-    pub topology: PrimitiveTopology,
-    pub strip_index_format: Option<IndexFormat>,
-    pub front_face: FrontFace,
-    pub cull_mode: Option<CullModeFlags>,
-    pub polygon_mode: PolygonMode,
-    pub unclipped_depth: bool,
-    pub conservative: bool,
-    pub line_width: f32,
-}
-
-pub struct DepthStencilState {
-    pub format: TextureFormat,
-    pub depth_write_enabled: bool,
-    pub depth_compare: DepthCompareOperator,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct MultisampleState {
-    pub count: u32,
-    pub mask: u64,
-    pub alpha_to_coverage_enabled: bool,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ColorTargetState {
-    pub format: TextureFormat,
-    pub blend: Option<vt::BlendState>,
-    pub write_mask: vt::ColorWrites,
-}
-
-pub type ShaderLocation = u32;
-
-pub struct VertexAttribute {
-    pub format: vt::VertexFormat,
-    pub offset: vt::BufferAddress,
-    pub location: ShaderLocation,
-}
-
-pub struct VertexBufferLayout<'a> {
-    pub array_stride: vt::BufferAddress,
-    pub step_mode: VertexStepMode,
-    pub attributes: &'a [VertexAttribute],
-}
-
 pub struct RasterPipelineInfo<'a> {
     pub layout: &'a PipelineLayout,
     pub vertex: ShaderStage<'a>,
-    pub vertex_buffers: &'a [VertexBufferLayout<'a>],
+    pub vertex_buffers: &'a [vt::VertexBufferLayout<'a>],
     pub fragment: Option<ShaderStage<'a>>,
-    pub primitive: PrimitiveState,
-    // pub depth_stencil:
-    pub multisample: MultisampleState,
-    pub targets: &'a [ColorTargetState],
+    pub primitive: vt::PrimitiveState,
+    pub depth_stencil: Option<vt::DepthStencilState>,
+    pub multisample: vt::MultisampleState,
+    pub targets: &'a [vt::ColorTargetState],
 }
 
 pub struct ComputePipelineInfo {}
@@ -297,8 +142,8 @@ impl Device {
                 binding: i as u32,
                 stride: vb.array_stride as u32,
                 input_rate: match vb.step_mode {
-                    VertexStepMode::Vertex => vk::VertexInputRate::VERTEX,
-                    VertexStepMode::Instance => vk::VertexInputRate::INSTANCE,
+                    vt::VertexStepMode::Vertex => vk::VertexInputRate::VERTEX,
+                    vt::VertexStepMode::Instance => vk::VertexInputRate::INSTANCE,
                 },
             });
             for at in vb.attributes {
@@ -377,12 +222,29 @@ impl Device {
             vk_rasterization = vk_rasterization.push_next(&mut vk_depth_clip_state);
         }
 
-        // let mut vk_depth_stencil = vk::PipelineDepthStencilStateCreateInfo::builder();
+        let mut vk_depth_stencil = vk::PipelineDepthStencilStateCreateInfo::builder();
+
+        if let Some(depth_stencil) = &info.depth_stencil {
+            vk_rasterization = vk_rasterization
+                .depth_bias_enable(true)
+                .depth_bias_constant_factor(depth_stencil.bias.constant)
+                .depth_bias_clamp(depth_stencil.bias.clamp)
+                .depth_bias_slope_factor(depth_stencil.bias.slope);
+
+            vk_depth_stencil = vk_depth_stencil
+                .depth_test_enable(true)
+                .depth_write_enable(depth_stencil.write)
+                .depth_compare_op(conv::map_depth_function(depth_stencil.depth_compare))
+                .depth_bounds_test_enable(false)
+                .stencil_test_enable(false)
+                .min_depth_bounds(0.0)
+                .max_depth_bounds(1.0);
+        }
 
         let mut vk_attachments = Vec::with_capacity(info.targets.len());
         let mut rendering_formats = Vec::with_capacity(info.targets.len());
         for target in info.targets {
-            let vk_format: vk::Format = target.format.into();
+            let vk_format = conv::map_texture_format(target.format);
             rendering_formats.push(vk_format);
             let mut vk_attachment = vk::PipelineColorBlendAttachmentState::builder()
                 .color_write_mask(vk::ColorComponentFlags::from_raw(target.write_mask.bits()));
@@ -404,24 +266,6 @@ impl Device {
 
         let vk_color_blend =
             vk::PipelineColorBlendStateCreateInfo::builder().attachments(&vk_attachments);
-
-        // let noop_stencil_state = vk::StencilOpState {
-        //     fail_op: vk::StencilOp::KEEP,
-        //     pass_op: vk::StencilOp::KEEP,
-        //     depth_fail_op: vk::StencilOp::KEEP,
-        //     compare_op: vk::CompareOp::ALWAYS,
-        //     ..Default::default()
-        // };
-        //
-        // let vk_depth_stencil = vk::PipelineDepthStencilStateCreateInfo {
-        //     depth_test_enable: 1,
-        //     depth_write_enable: 1,
-        //     depth_compare_op: vk::CompareOp::LESS_OR_EQUAL,
-        //     front: noop_stencil_state,
-        //     back: noop_stencil_state,
-        //     max_depth_bounds: 1.0,
-        //     ..Default::default()
-        // };
 
         let default_viewport = vk::Viewport {
             x: 0.0,
@@ -451,6 +295,11 @@ impl Device {
         let mut pipeline_rendering_info =
             vk::PipelineRenderingCreateInfo::builder().color_attachment_formats(&rendering_formats);
 
+        if let Some(depth) = &info.depth_stencil {
+            pipeline_rendering_info = pipeline_rendering_info
+                .depth_attachment_format(conv::map_texture_format(depth.format));
+        }
+
         let pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
             .layout(info.layout.handle)
             .stages(&stages)
@@ -459,7 +308,7 @@ impl Device {
             .rasterization_state(&vk_rasterization)
             .viewport_state(&vk_viewport)
             .multisample_state(&vk_multisample)
-            // .depth_stencil_state(&vk_depth_stencil)
+            .depth_stencil_state(&vk_depth_stencil)
             .color_blend_state(&vk_color_blend)
             .render_pass(vk::RenderPass::null())
             .dynamic_state(&vk_dynamic_state)

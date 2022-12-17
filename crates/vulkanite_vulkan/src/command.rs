@@ -1,7 +1,8 @@
 use crate::buffer::Buffer;
 use crate::conv;
+use crate::conv::map_depth_attachment_info;
 use crate::device::{Device, DeviceError, DeviceShared};
-use crate::pipeline::{PipelineLayout, RasterPipeline, ShaderStages};
+use crate::pipeline::{vt, PipelineLayout, RasterPipeline};
 use crate::queue::Queue;
 use crate::surface::Frame;
 use crate::types::{ImageTransitionLayout, RenderInfo};
@@ -81,8 +82,12 @@ impl CommandEncoder {
         let attachments = info
             .color_attachments
             .iter()
-            .map(|attachment| attachment.to_vulkan(info.frame.view))
+            .map(|attachment| conv::map_render_attachment_info(attachment))
             .collect::<Vec<_>>();
+
+        let depth = info
+            .depth_attachment
+            .map(|depth| map_depth_attachment_info(&depth));
 
         let area = vk::Rect2D {
             offset: vk::Offset2D {
@@ -96,7 +101,7 @@ impl CommandEncoder {
         };
 
         unsafe {
-            handle.begin_rendering(area, &attachments);
+            handle.begin_rendering(area, &attachments, depth, None);
         }
     }
 
@@ -146,7 +151,7 @@ impl CommandEncoder {
     pub fn push_constants(
         &mut self,
         layout: &PipelineLayout,
-        stages: ShaderStages,
+        stages: vt::ShaderStages,
         offset: u32,
         data: &[u8],
     ) {
@@ -246,12 +251,22 @@ impl VkCommandEncoder {
         &mut self,
         area: vk::Rect2D,
         attachments: &[vk::RenderingAttachmentInfo],
+        depth_attachment: Option<vk::RenderingAttachmentInfo>,
+        stencil_attachment: Option<vk::RenderingAttachmentInfo>,
     ) {
-        let render_info = vk::RenderingInfo::builder()
+        let mut render_info = vk::RenderingInfo::builder()
             .render_area(area)
             .color_attachments(attachments)
             .view_mask(0)
             .layer_count(1);
+
+        if let Some(depth) = &depth_attachment {
+            render_info = render_info.depth_attachment(depth);
+        }
+
+        if let Some(stencil) = &stencil_attachment {
+            render_info = render_info.stencil_attachment(stencil);
+        }
 
         let viewports = [vk::Viewport::builder()
             .width(area.extent.width as f32)

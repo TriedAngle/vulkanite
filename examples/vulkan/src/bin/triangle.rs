@@ -140,7 +140,7 @@ fn main() {
             label: None,
             contents: bytemuck::cast_slice(VERTICES),
             usage: vn::BufferUsages::VERTEX | vn::BufferUsages::MAP_WRITE,
-            sharing: vn::BufferSharing::Exclusive,
+            sharing: vn::SharingMode::Exclusive,
         })
         .unwrap();
 
@@ -177,6 +177,7 @@ fn main() {
                 conservative: false,
                 line_width: 1.0,
             },
+            depth_stencil: None,
             multisample: vn::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -247,12 +248,15 @@ fn main() {
             );
 
             encoder.begin_rendering(vn::RenderInfo {
-                color_attachments: &[vn::RenderAttachmentInfo {
-                    load_op: vn::LoadOp::Clear,
-                    store_op: vn::StoreOp::Store,
-                    clear: vn::ClearOp::Color(vn::Color::norm(0.1, 0.2, 0.3, 1.0)),
+                color_attachments: &[vn::RenderAttachment {
+                    view: frame.view(),
+                    ops: vn::Operations {
+                        load: vn::LoadOp::Clear(vn::Color::norm(0.1, 0.2, 0.3, 1.0)),
+                        store: vn::StoreOp::Store,
+                    },
                 }],
-                frame: &frame,
+                depth_attachment: None,
+                stencil_attachment: None,
                 offset: (0, 0),
                 area: (surface_config.width, surface_config.height),
             });

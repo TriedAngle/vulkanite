@@ -13,12 +13,6 @@ bitflags::bitflags! {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum BufferSharing {
-    Exclusive,
-    Concurrent,
-}
-
 pub type BufferAddress = u64;
 pub const COPY_BUFFER_ALIGNMENT: BufferAddress = 4;
 

@@ -1,16 +1,15 @@
 use crate::conv;
-use crate::device::{Device, DeviceError, DeviceShared};
+use crate::device::{Device, DeviceError};
 use ash::vk;
 use gpu_alloc_ash::AshMemoryDevice;
 use parking_lot::Mutex;
-use std::sync::Arc;
 use vulkanite_types as vt;
 
 pub struct BufferInitInfo<'a> {
     pub label: Option<&'a str>,
     pub contents: &'a [u8],
     pub usage: vt::BufferUsages,
-    pub sharing: vt::BufferSharing,
+    pub sharing: vt::SharingMode,
 }
 
 pub struct Buffer {
@@ -34,7 +33,7 @@ impl Device {
         let vk_info = vk::BufferCreateInfo::builder()
             .size(size)
             .usage(conv::map_buffer_usage(info.usage))
-            .sharing_mode(conv::map_buffer_sharing(info.sharing));
+            .sharing_mode(conv::map_sharing_mode(info.sharing));
 
         let handle = unsafe {
             self.shared
@@ -45,7 +44,7 @@ impl Device {
 
         let requirements = unsafe { self.shared.handle.get_buffer_memory_requirements(handle) };
 
-        let mut alloc_usage = if info
+        let alloc_usage = if info
             .usage
             .intersects(vt::BufferUsages::MAP_READ | vt::BufferUsages::MAP_WRITE)
         {
